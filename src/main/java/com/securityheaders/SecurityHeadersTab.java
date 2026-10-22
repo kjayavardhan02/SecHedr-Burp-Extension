@@ -1,0 +1,2269 @@
+package com.securityheaders;
+
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.table.AbstractTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
+import java.awt.*;
+import java.awt.event.ItemEvent;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.io.File;
+import java.util.*;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import com.securityheaders.testcase.*;
+
+public class SecurityHeadersTab extends JPanel {
+
+    private static final Color BG = new Color(22, 24, 30);
+    private static final Color BG2 = new Color(28, 31, 38);
+    private static final Color BG_ELEV = new Color(34, 37, 45);
+    private static final Color BG_INPUT = new Color(26, 28, 35);
+    private static final Color BORDER = new Color(44, 48, 58);
+    private static final Color BORDER_S = new Color(38, 42, 50);
+    private static final Color TXT = new Color(200, 204, 212);
+    private static final Color TXT2 = new Color(130, 136, 152);
+    private static final Color TXT_M = new Color(85, 92, 108);
+    private static final Color ACCENT = new Color(88, 146, 240);
+    private static final Color ACCENT_H = new Color(110, 164, 252);
+    private static final Color ACCENT_DIM = new Color(55, 90, 150);
+    private static final Color HI = new Color(0xFF, 0xFF, 0xFF);
+    private static final Color GREEN_BG = new Color(20, 42, 30);
+    private static final Color GREEN_FG = new Color(76, 175, 110);
+    private static final Color RED_BG = new Color(45, 22, 26);
+    private static final Color RED_FG = new Color(210, 95, 100);
+    private static final Color WARN_BG = new Color(42, 38, 22);
+    private static final Color WARN_FG = new Color(195, 165, 80);
+    private static final Color TBL_HDR = new Color(28, 31, 38);
+    private static final Color TBL_EVEN = new Color(24, 26, 32);
+    private static final Color TBL_ODD = new Color(28, 31, 38);
+    private static final Color TBL_SEL = new Color(36, 52, 82);
+    private static final Color TBL_DIV = new Color(36, 40, 48);
+    private static final Color BTN_MUTED = new Color(52, 56, 68);
+    private static final Color BTN_MUTED_H = new Color(62, 66, 78);
+
+    private final ResultStore resultStore;
+    private final ResultStore repeaterResultStore;
+    private final ScopeManager scopeManager;
+    private final HeaderCheckHttpHandler handler;
+    private final TestcaseLibrary library;
+    private final TestcaseResultStore tcResultStore;
+    private final EndpointRegistry endpointRegistry;
+    private final ApprovedBaseline baseline;
+    private final ActiveRunner activeRunner;
+    private final TestcaseSelector selector;
+    private final ResultFilterService filterService = new ResultFilterService();
+    private final SummaryService summaryService = new SummaryService();
+    private final CsvExportService csvExport = new CsvExportService();
+
+    private final ResultsTableModel rawTableModel = new ResultsTableModel();
+    private final HostSummaryTableModel hostTableModel = new HostSummaryTableModel();
+    private final EndpointSummaryTableModel epTableModel = new EndpointSummaryTableModel();
+    private final ResultsTableModel repeaterTableModel = new ResultsTableModel();
+    private TestcaseResultsTableModel tcTableModel;
+
+    // Raw Results filter controls
+    private JTextField rawSearchField;
+    private JComboBox<String> rawHostCombo;
+    private JComboBox<String> rawStatusCombo;
+    private JComboBox<String> rawHeaderCombo;
+    private JLabel rawFilterIndicator;
+
+    // Repeater filter controls
+    private JTextField repSearchField;
+    private JComboBox<String> repHostCombo;
+    private JComboBox<String> repStatusCombo;
+    private JComboBox<String> repHeaderCombo;
+    private JLabel repFilterIndicator;
+
+    // Host Summary filter controls
+    private JTextField hostSearchField;
+    private JComboBox<String> hostHeaderCombo;
+    private JLabel hostFilterIndicator;
+
+    // Endpoint Summary filter controls
+    private JTextField epSearchField;
+    private JComboBox<String> epHostCombo;
+    private JComboBox<String> epHeaderCombo;
+    private JLabel epFilterIndicator;
+
+    // Catalog filter
+    private JTextField catalogSearchField;
+
+    private JLabel statusLabel;
+
+    // Summary card labels
+    private JLabel cardResponses, cardWithMissing, cardHosts, cardMissingOccur;
+    private JLabel cardTcTotal, cardTcPass, cardTcFail, cardTcError;
+
+    // Testcase filter
+    private JComboBox<String> tcModeCombo;
+    private JComboBox<String> tcStatusCombo;
+    private JComboBox<String> tcCategoryCombo;
+
+    private List<HeaderResult> currentFiltered = new ArrayList<>();
+    private List<HeaderResult> currentRepFiltered = new ArrayList<>();
+    private List<TestcaseResult> currentTcFiltered = new ArrayList<>();
+    private volatile boolean refreshingCombos = false;
+
+    public SecurityHeadersTab(ResultStore resultStore, ResultStore repeaterResultStore,
+                              ScopeManager scopeManager, HeaderCheckHttpHandler handler,
+                              TestcaseLibrary library, TestcaseResultStore tcResultStore,
+                              EndpointRegistry endpointRegistry, ApprovedBaseline baseline,
+                              ActiveRunner activeRunner, TestcaseSelector selector) {
+        this.resultStore = resultStore;
+        this.repeaterResultStore = repeaterResultStore;
+        this.scopeManager = scopeManager;
+        this.handler = handler;
+        this.library = library;
+        this.tcResultStore = tcResultStore;
+        this.endpointRegistry = endpointRegistry;
+        this.baseline = baseline;
+        this.activeRunner = activeRunner;
+        this.selector = selector;
+        this.tcTableModel = new TestcaseResultsTableModel(library);
+
+        setLayout(new BorderLayout());
+        setBackground(BG);
+
+        add(createBanner(), BorderLayout.NORTH);
+
+        JPanel mainBody = new JPanel(new BorderLayout());
+        mainBody.setBackground(BG);
+
+        mainBody.add(createSummaryCards(), BorderLayout.NORTH);
+        mainBody.add(createTabbedContent(), BorderLayout.CENTER);
+
+        add(mainBody, BorderLayout.CENTER);
+        add(createStatusBar(), BorderLayout.SOUTH);
+
+        refreshViews();
+    }
+
+    // ─── Banner ──────────────────────────────────────────────────────────────
+
+    private JPanel createBanner() {
+        JPanel banner = new JPanel(new BorderLayout()) {
+            @Override protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                g.setColor(ACCENT);
+                g.fillRect(0, 0, getWidth(), 2);
+            }
+        };
+        banner.setBackground(BG2);
+        banner.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
+                new EmptyBorder(10, 16, 8, 16)));
+
+        JLabel title = new JLabel("Security Headers Analyzer");
+        title.setFont(new Font("SansSerif", Font.BOLD, 13));
+        title.setForeground(TXT);
+        JLabel sub = new JLabel("v4.1  /  108 testcases");
+        sub.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        sub.setForeground(TXT_M);
+
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        left.setOpaque(false);
+        JPanel tt = new JPanel();
+        tt.setOpaque(false);
+        tt.setLayout(new BoxLayout(tt, BoxLayout.Y_AXIS));
+        tt.add(title); tt.add(Box.createVerticalStrut(2)); tt.add(sub);
+        left.add(tt);
+
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        right.setOpaque(false);
+
+        Color ON_BG = ACCENT;
+        Color OFF_BG = new Color(42, 36, 40);
+
+        JButton enableBtn = pill("Enabled", ACCENT, ACCENT_H);
+        enableBtn.addActionListener(e -> {
+            boolean on = !handler.isEnabled();
+            handler.setEnabled(on);
+            enableBtn.setText(on ? "Enabled" : "Disabled");
+            enableBtn.putClientProperty("pill.restBg", on ? ON_BG : OFF_BG);
+            enableBtn.putClientProperty("pill.hoverBg", on ? ACCENT : OFF_BG);
+            enableBtn.setBackground(on ? ON_BG : OFF_BG);
+            enableBtn.setForeground(on ? HI : TXT_M);
+            statusLabel.setText(on ? "Monitoring" : "Paused");
+            statusLabel.setForeground(on ? ACCENT : TXT_M);
+        });
+
+        JButton passiveBtn = pill("Passive Scan", ACCENT_DIM, ACCENT);
+        passiveBtn.setToolTipText("Toggle Passive Scanning");
+        passiveBtn.addActionListener(e -> {
+            boolean on = !handler.isPassiveEnabled();
+            handler.setPassiveEnabled(on);
+            passiveBtn.putClientProperty("pill.restBg", on ? ON_BG : OFF_BG);
+            passiveBtn.putClientProperty("pill.hoverBg", on ? ACCENT : OFF_BG);
+            passiveBtn.setBackground(on ? ON_BG : OFF_BG);
+            passiveBtn.setForeground(on ? HI : TXT_M);
+            passiveBtn.setToolTipText(on ? "Passive ON" : "Passive OFF");
+        });
+
+        JButton activeBtn = pill("Active Scan", ACCENT_DIM, ACCENT);
+        activeBtn.setToolTipText("Toggle Active Scanning");
+        activeBtn.addActionListener(e -> {
+            boolean on = !handler.isActiveEnabled();
+            handler.setActiveEnabled(on);
+            activeBtn.putClientProperty("pill.restBg", on ? ON_BG : OFF_BG);
+            activeBtn.putClientProperty("pill.hoverBg", on ? ACCENT : OFF_BG);
+            activeBtn.setBackground(on ? ON_BG : OFF_BG);
+            activeBtn.setForeground(on ? HI : TXT_M);
+            activeBtn.setToolTipText(on ? "Active ON" : "Active OFF");
+        });
+
+        JButton clearBtn = pill("Clear", BTN_MUTED, BTN_MUTED_H);
+        clearBtn.setForeground(RED_FG);
+        clearBtn.addActionListener(e -> {
+            resultStore.clear();
+            repeaterResultStore.clear();
+            tcResultStore.clear();
+            endpointRegistry.clear();
+            handler.clearSeenUrls();
+            refreshViews();
+            refreshRepeaterViews();
+            refreshTestcaseViews();
+            statusLabel.setText("Cleared");
+            statusLabel.setForeground(TXT_M);
+        });
+        right.add(passiveBtn);
+        right.add(activeBtn);
+        right.add(enableBtn);
+        right.add(clearBtn);
+
+        banner.add(left, BorderLayout.WEST);
+        banner.add(right, BorderLayout.EAST);
+        return banner;
+    }
+
+    // ─── Summary Cards ───────────────────────────────────────────────────────
+
+    private JPanel createSummaryCards() {
+        JPanel wrapper = new JPanel();
+        wrapper.setOpaque(false);
+        wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
+
+        JPanel row1 = new JPanel(new GridLayout(1, 4, 8, 0));
+        row1.setOpaque(false);
+        row1.setBorder(new EmptyBorder(8, 14, 3, 14));
+
+        cardResponses = new JLabel("0");
+        cardWithMissing = new JLabel("0");
+        cardHosts = new JLabel("0");
+        cardMissingOccur = new JLabel("0");
+
+        row1.add(summaryCard("Responses", cardResponses, ACCENT));
+        row1.add(summaryCard("Missing Headers", cardWithMissing, RED_FG));
+        row1.add(summaryCard("Hosts", cardHosts, ACCENT));
+        row1.add(summaryCard("Missing Total", cardMissingOccur, RED_FG));
+
+        JPanel row2 = new JPanel(new GridLayout(1, 4, 8, 0));
+        row2.setOpaque(false);
+        row2.setBorder(new EmptyBorder(3, 14, 3, 14));
+
+        cardTcTotal = new JLabel("0");
+        cardTcPass = new JLabel("0");
+        cardTcFail = new JLabel("0");
+        cardTcError = new JLabel("0");
+
+        row2.add(summaryCard("Testcases", cardTcTotal, ACCENT));
+        row2.add(summaryCard("Passed", cardTcPass, GREEN_FG));
+        row2.add(summaryCard("Failed", cardTcFail, RED_FG));
+        row2.add(summaryCard("Errors", cardTcError, WARN_FG));
+
+        wrapper.add(row1);
+        wrapper.add(row2);
+        return wrapper;
+    }
+
+    private JPanel summaryCard(String label, JLabel valueLabel, Color accent) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(BG_ELEV);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_S),
+                new EmptyBorder(7, 12, 7, 12)));
+        JLabel lbl = new JLabel(label.toUpperCase());
+        lbl.setFont(new Font("SansSerif", Font.PLAIN, 9));
+        lbl.setForeground(TXT_M);
+        valueLabel.setFont(new Font("SansSerif", Font.BOLD, 18));
+        valueLabel.setForeground(accent);
+        card.add(lbl, BorderLayout.NORTH);
+        card.add(valueLabel, BorderLayout.CENTER);
+        return card;
+    }
+
+    // ─── Tabbed Content ──────────────────────────────────────────────────────
+
+    private JTabbedPane createTabbedContent() {
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.setBackground(BG);
+        tabs.setForeground(TXT);
+        tabs.setFont(new Font("SansSerif", Font.PLAIN, 11));
+
+        tabs.addTab("Raw Results", createRawResultsPanel());
+        tabs.addTab("Host Summary", createHostSummaryPanel());
+        tabs.addTab("Endpoint Summary", createEndpointSummaryPanel());
+        tabs.addTab("Testcase Results", createTestcasePanel());
+        tabs.addTab("Repeater Requests", createRepeaterPanel());
+        tabs.addTab("Testcase Catalog", createCatalogPanel());
+        tabs.addTab("Scope & Export", createScopeExportPanel());
+
+        return tabs;
+    }
+
+    // ─── Raw Results Panel (with embedded filter bar) ────────────────────────
+
+    private JPanel createRawResultsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BG);
+        panel.setBorder(new EmptyBorder(6, 10, 6, 10));
+
+        // Filter bar
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        bar.setBackground(BG2);
+        bar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
+                new EmptyBorder(6, 14, 6, 14)));
+
+        rawSearchField = darkField(14);
+        rawSearchField.setToolTipText("Search host/path");
+        rawSearchField.addActionListener(e -> applyRawFilters());
+        bar.add(label("Search")); bar.add(rawSearchField);
+
+        rawHostCombo = darkCombo(new String[]{"All Hosts"});
+        rawHostCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyRawFilters(); });
+        bar.add(label("Host")); bar.add(rawHostCombo);
+
+        rawStatusCombo = darkCombo(new String[]{"All Status Code"});
+        rawStatusCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyRawFilters(); });
+        bar.add(label("Status Code")); bar.add(rawStatusCombo);
+
+        rawHeaderCombo = darkCombo(new String[]{
+                "All Headers", "Any Missing", "HSTS Missing", "Cache-Control Missing",
+                "XFO Missing", "XCTO Missing", "ACAO Missing", "CSP Missing"});
+        rawHeaderCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyRawFilters(); });
+        bar.add(label("Header")); bar.add(rawHeaderCombo);
+
+        JButton clearFilt = pill("Reset", new Color(60, 64, 76), new Color(75, 80, 94));
+        clearFilt.addActionListener(e -> clearRawFilters());
+        bar.add(clearFilt);
+
+        rawFilterIndicator = new JLabel("");
+        rawFilterIndicator.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        rawFilterIndicator.setForeground(ACCENT);
+        bar.add(rawFilterIndicator);
+
+        // Table
+        JTable table = new JTable(rawTableModel);
+        styleTable(table);
+        applyPresenceRenderer(table, 4, 9);
+
+        JScrollPane tableSp = new JScrollPane(table);
+        tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        tableSp.getViewport().setBackground(TBL_EVEN);
+        tableSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        tableSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+
+        // Request/Response detail
+        JTextArea requestArea = darkTextArea();
+        JTextArea responseArea = darkTextArea();
+
+        JPanel reqPanel = new JPanel(new BorderLayout());
+        reqPanel.setBackground(BG);
+        JLabel reqLabel = new JLabel("  REQUEST");
+        reqLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        reqLabel.setForeground(ACCENT);
+        reqLabel.setOpaque(true);
+        reqLabel.setBackground(BG2);
+        reqLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+        JScrollPane reqSp = new JScrollPane(requestArea);
+        reqSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        reqSp.getViewport().setBackground(BG_INPUT);
+        reqSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        reqSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        reqPanel.add(reqLabel, BorderLayout.NORTH);
+        reqPanel.add(reqSp, BorderLayout.CENTER);
+
+        JPanel respPanel = new JPanel(new BorderLayout());
+        respPanel.setBackground(BG);
+        JLabel respLabel = new JLabel("  RESPONSE");
+        respLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        respLabel.setForeground(TXT2);
+        respLabel.setOpaque(true);
+        respLabel.setBackground(BG2);
+        respLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        JScrollPane respSp = new JScrollPane(responseArea);
+        respSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        respSp.getViewport().setBackground(BG_INPUT);
+        respSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        respSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        respPanel.add(respLabel, BorderLayout.NORTH);
+        respPanel.add(respSp, BorderLayout.CENTER);
+
+        JSplitPane reqRespSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqPanel, respPanel);
+        reqRespSplit.setResizeWeight(0.5);
+        reqRespSplit.setDividerSize(4);
+        reqRespSplit.setBackground(BG);
+        reqRespSplit.setBorder(null);
+
+        JPanel detailWrapper = new JPanel(new BorderLayout());
+        detailWrapper.setBackground(BG);
+
+        JPanel detailHeaderBar = new JPanel(new BorderLayout());
+        detailHeaderBar.setBackground(BG2);
+        detailHeaderBar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER),
+                new EmptyBorder(2, 12, 2, 4)));
+
+        JLabel detailTitle = new JLabel("  Request / Response");
+        detailTitle.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        detailTitle.setForeground(TXT_M);
+
+        JButton closeDetailBtn = new JButton("✕");
+        closeDetailBtn.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        closeDetailBtn.setForeground(TXT_M);
+        closeDetailBtn.setBackground(BG2);
+        closeDetailBtn.setFocusPainted(false);
+        closeDetailBtn.setBorderPainted(false);
+        closeDetailBtn.setContentAreaFilled(false);
+        closeDetailBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeDetailBtn.setBorder(new EmptyBorder(2, 10, 2, 10));
+        closeDetailBtn.setToolTipText("Close viewer");
+        closeDetailBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { closeDetailBtn.setForeground(RED_FG); }
+            @Override public void mouseExited(MouseEvent e) { closeDetailBtn.setForeground(TXT_M); }
+        });
+
+        detailHeaderBar.add(detailTitle, BorderLayout.WEST);
+        detailHeaderBar.add(closeDetailBtn, BorderLayout.EAST);
+
+        detailWrapper.add(detailHeaderBar, BorderLayout.NORTH);
+        detailWrapper.add(reqRespSplit, BorderLayout.CENTER);
+
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableSp, detailWrapper);
+        mainSplit.setResizeWeight(0.55);
+        mainSplit.setDividerSize(5);
+        mainSplit.setBackground(BG);
+        mainSplit.setBorder(null);
+
+        JPanel contentWrapper = new JPanel(new BorderLayout());
+        contentWrapper.setBackground(BG);
+        contentWrapper.add(tableSp, BorderLayout.CENTER);
+        final boolean[] detailShown = {false};
+
+        closeDetailBtn.addActionListener(ev -> {
+            table.clearSelection();
+            requestArea.setText("");
+            responseArea.setText("");
+            reqLabel.setText("  REQUEST");
+            respLabel.setText("  RESPONSE");
+            if (detailShown[0]) {
+                contentWrapper.removeAll();
+                contentWrapper.add(tableSp, BorderLayout.CENTER);
+                contentWrapper.revalidate();
+                contentWrapper.repaint();
+                detailShown[0] = false;
+            }
+        });
+
+        table.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            int viewRow = table.getSelectedRow();
+            if (viewRow < 0) {
+                requestArea.setText("");
+                responseArea.setText("");
+                reqLabel.setText("  REQUEST");
+                respLabel.setText("  RESPONSE");
+                if (detailShown[0]) {
+                    contentWrapper.removeAll();
+                    contentWrapper.add(tableSp, BorderLayout.CENTER);
+                    contentWrapper.revalidate();
+                    contentWrapper.repaint();
+                    detailShown[0] = false;
+                }
+                return;
+            }
+            int modelRow = table.convertRowIndexToModel(viewRow);
+            List<HeaderResult> data = rawTableModel.getData();
+            if (modelRow < 0 || modelRow >= data.size()) return;
+
+            HeaderResult r = data.get(modelRow);
+
+            String reqText = r.rawRequest();
+            String respText = r.rawResponse();
+            requestArea.setText(reqText != null ? reqText : "(No request data captured)");
+            responseArea.setText(respText != null ? respText : "(No response data captured)");
+            requestArea.setCaretPosition(0);
+            responseArea.setCaretPosition(0);
+
+            if (!detailShown[0]) {
+                contentWrapper.removeAll();
+                mainSplit.setTopComponent(tableSp);
+                mainSplit.setBottomComponent(detailWrapper);
+                contentWrapper.add(mainSplit, BorderLayout.CENTER);
+                contentWrapper.revalidate();
+                contentWrapper.repaint();
+                SwingUtilities.invokeLater(() -> mainSplit.setDividerLocation(0.55));
+                detailShown[0] = true;
+            }
+            table.requestFocusInWindow();
+        });
+
+        addDetailArrowNav(table, requestArea, responseArea);
+
+        panel.add(bar, BorderLayout.NORTH);
+        panel.add(contentWrapper, BorderLayout.CENTER);
+        return panel;
+    }
+
+    // ─── Host Summary Panel ─────────────────────────────────────────────────
+
+    private JPanel createHostSummaryPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BG);
+        panel.setBorder(new EmptyBorder(6, 10, 6, 10));
+
+        // Filter bar
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        bar.setBackground(BG2);
+        bar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
+                new EmptyBorder(6, 14, 6, 14)));
+
+        hostSearchField = darkField(14);
+        hostSearchField.setToolTipText("Search host");
+        hostSearchField.addActionListener(e -> applyHostFilters());
+        bar.add(label("Search")); bar.add(hostSearchField);
+
+        hostHeaderCombo = darkCombo(new String[]{
+                "All Headers", "Any Missing", "HSTS Missing", "Cache-Control Missing",
+                "XFO Missing", "XCTO Missing", "ACAO Missing", "CSP Missing"});
+        hostHeaderCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyHostFilters(); });
+        bar.add(label("Header")); bar.add(hostHeaderCombo);
+
+        JButton clearBtn = pill("Reset", new Color(60, 64, 76), new Color(75, 80, 94));
+        clearBtn.addActionListener(e -> {
+            hostSearchField.setText("");
+            hostHeaderCombo.setSelectedIndex(0);
+            applyHostFilters();
+        });
+        bar.add(clearBtn);
+
+        hostFilterIndicator = new JLabel("");
+        hostFilterIndicator.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        hostFilterIndicator.setForeground(ACCENT);
+        bar.add(hostFilterIndicator);
+
+        JTable table = new JTable(hostTableModel);
+        styleTable(table);
+        applyCountRenderer(table, 4, 9);
+
+        JScrollPane sp = new JScrollPane(table);
+        sp.setBorder(BorderFactory.createLineBorder(BORDER));
+        sp.getViewport().setBackground(TBL_EVEN);
+        sp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        sp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+
+        panel.add(bar, BorderLayout.NORTH);
+        panel.add(sp, BorderLayout.CENTER);
+        return panel;
+    }
+
+    // ─── Endpoint Summary Panel (with request/response detail) ──────────────
+
+    private JPanel createEndpointSummaryPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BG);
+        panel.setBorder(new EmptyBorder(6, 10, 6, 10));
+
+        // Filter bar
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        bar.setBackground(BG2);
+        bar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
+                new EmptyBorder(6, 14, 6, 14)));
+
+        epSearchField = darkField(14);
+        epSearchField.setToolTipText("Search host/path");
+        epSearchField.addActionListener(e -> applyEpFilters());
+        bar.add(label("Search")); bar.add(epSearchField);
+
+        epHostCombo = darkCombo(new String[]{"All Hosts"});
+        epHostCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyEpFilters(); });
+        bar.add(label("Host")); bar.add(epHostCombo);
+
+        epHeaderCombo = darkCombo(new String[]{
+                "All Headers", "Any Missing", "HSTS Missing", "Cache-Control Missing",
+                "XFO Missing", "XCTO Missing", "ACAO Missing", "CSP Missing"});
+        epHeaderCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyEpFilters(); });
+        bar.add(label("Header")); bar.add(epHeaderCombo);
+
+        JButton clearBtn = pill("Reset", new Color(60, 64, 76), new Color(75, 80, 94));
+        clearBtn.addActionListener(e -> {
+            epSearchField.setText("");
+            epHostCombo.setSelectedIndex(0);
+            epHeaderCombo.setSelectedIndex(0);
+            applyEpFilters();
+        });
+        bar.add(clearBtn);
+
+        epFilterIndicator = new JLabel("");
+        epFilterIndicator.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        epFilterIndicator.setForeground(ACCENT);
+        bar.add(epFilterIndicator);
+
+        JTable table = new JTable(epTableModel);
+        styleTable(table);
+        applyCountRenderer(table, 7, 12);
+
+        JScrollPane tableSp = new JScrollPane(table);
+        tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        tableSp.getViewport().setBackground(TBL_EVEN);
+        tableSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        tableSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+
+        // Request/Response detail
+        JTextArea requestArea = darkTextArea();
+        JTextArea responseArea = darkTextArea();
+
+        JPanel reqPanel = new JPanel(new BorderLayout());
+        reqPanel.setBackground(BG);
+        JLabel reqLabel = new JLabel("  REQUEST");
+        reqLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        reqLabel.setForeground(ACCENT);
+        reqLabel.setOpaque(true);
+        reqLabel.setBackground(BG2);
+        reqLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+        JScrollPane reqSp = new JScrollPane(requestArea);
+        reqSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        reqSp.getViewport().setBackground(BG_INPUT);
+        reqSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        reqSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        reqPanel.add(reqLabel, BorderLayout.NORTH);
+        reqPanel.add(reqSp, BorderLayout.CENTER);
+
+        JPanel respPanel = new JPanel(new BorderLayout());
+        respPanel.setBackground(BG);
+        JLabel respLabel = new JLabel("  RESPONSE");
+        respLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        respLabel.setForeground(TXT2);
+        respLabel.setOpaque(true);
+        respLabel.setBackground(BG2);
+        respLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        JScrollPane respSp = new JScrollPane(responseArea);
+        respSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        respSp.getViewport().setBackground(BG_INPUT);
+        respSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        respSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        respPanel.add(respLabel, BorderLayout.NORTH);
+        respPanel.add(respSp, BorderLayout.CENTER);
+
+        JSplitPane reqRespSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqPanel, respPanel);
+        reqRespSplit.setResizeWeight(0.5);
+        reqRespSplit.setDividerSize(4);
+        reqRespSplit.setBackground(BG);
+        reqRespSplit.setBorder(null);
+
+        JPanel detailWrapper = new JPanel(new BorderLayout());
+        detailWrapper.setBackground(BG);
+
+        JPanel detailHeaderBar = new JPanel(new BorderLayout());
+        detailHeaderBar.setBackground(BG2);
+        detailHeaderBar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER),
+                new EmptyBorder(2, 12, 2, 4)));
+
+        JLabel detailTitle = new JLabel("  Request / Response (most recent for endpoint)");
+        detailTitle.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        detailTitle.setForeground(TXT_M);
+
+        JButton closeDetailBtn = new JButton("✕");
+        closeDetailBtn.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        closeDetailBtn.setForeground(TXT_M);
+        closeDetailBtn.setBackground(BG2);
+        closeDetailBtn.setFocusPainted(false);
+        closeDetailBtn.setBorderPainted(false);
+        closeDetailBtn.setContentAreaFilled(false);
+        closeDetailBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeDetailBtn.setBorder(new EmptyBorder(2, 10, 2, 10));
+        closeDetailBtn.setToolTipText("Close viewer");
+        closeDetailBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { closeDetailBtn.setForeground(RED_FG); }
+            @Override public void mouseExited(MouseEvent e) { closeDetailBtn.setForeground(TXT_M); }
+        });
+
+        detailHeaderBar.add(detailTitle, BorderLayout.WEST);
+        detailHeaderBar.add(closeDetailBtn, BorderLayout.EAST);
+
+        detailWrapper.add(detailHeaderBar, BorderLayout.NORTH);
+        detailWrapper.add(reqRespSplit, BorderLayout.CENTER);
+
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableSp, detailWrapper);
+        mainSplit.setResizeWeight(0.55);
+        mainSplit.setDividerSize(5);
+        mainSplit.setBackground(BG);
+        mainSplit.setBorder(null);
+
+        JPanel contentWrapper = new JPanel(new BorderLayout());
+        contentWrapper.setBackground(BG);
+        contentWrapper.add(tableSp, BorderLayout.CENTER);
+        final boolean[] detailShown = {false};
+
+        closeDetailBtn.addActionListener(ev -> {
+            table.clearSelection();
+            requestArea.setText("");
+            responseArea.setText("");
+            reqLabel.setText("  REQUEST");
+            respLabel.setText("  RESPONSE");
+            if (detailShown[0]) {
+                contentWrapper.removeAll();
+                contentWrapper.add(tableSp, BorderLayout.CENTER);
+                contentWrapper.revalidate();
+                contentWrapper.repaint();
+                detailShown[0] = false;
+            }
+        });
+
+        table.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            int viewRow = table.getSelectedRow();
+            if (viewRow < 0) {
+                requestArea.setText("");
+                responseArea.setText("");
+                reqLabel.setText("  REQUEST");
+                respLabel.setText("  RESPONSE");
+                if (detailShown[0]) {
+                    contentWrapper.removeAll();
+                    contentWrapper.add(tableSp, BorderLayout.CENTER);
+                    contentWrapper.revalidate();
+                    contentWrapper.repaint();
+                    detailShown[0] = false;
+                }
+                return;
+            }
+            int modelRow = table.convertRowIndexToModel(viewRow);
+            List<EndpointSummary> data = epTableModel.getData();
+            if (modelRow < 0 || modelRow >= data.size()) return;
+
+            EndpointSummary ep = data.get(modelRow);
+            String epKey = ep.host() + ":" + ep.port() + ":" + ep.method() + ":" + ep.pathAndQuery();
+
+            HeaderResult match = null;
+            List<HeaderResult> all = resultStore.getAll();
+            for (int i = all.size() - 1; i >= 0; i--) {
+                if (all.get(i).endpointKey().equals(epKey)) {
+                    match = all.get(i);
+                    break;
+                }
+            }
+
+            if (match != null) {
+                String reqText = match.rawRequest();
+                String respText = match.rawResponse();
+                requestArea.setText(reqText != null ? reqText : "(No request data captured)");
+                responseArea.setText(respText != null ? respText : "(No response data captured)");
+            } else {
+                requestArea.setText("(No matching result found)");
+                responseArea.setText("(No matching result found)");
+            }
+            requestArea.setCaretPosition(0);
+            responseArea.setCaretPosition(0);
+
+            if (!detailShown[0]) {
+                contentWrapper.removeAll();
+                mainSplit.setTopComponent(tableSp);
+                mainSplit.setBottomComponent(detailWrapper);
+                contentWrapper.add(mainSplit, BorderLayout.CENTER);
+                contentWrapper.revalidate();
+                contentWrapper.repaint();
+                SwingUtilities.invokeLater(() -> mainSplit.setDividerLocation(0.55));
+                detailShown[0] = true;
+            }
+            table.requestFocusInWindow();
+        });
+
+        addDetailArrowNav(table, requestArea, responseArea);
+
+        panel.add(bar, BorderLayout.NORTH);
+        panel.add(contentWrapper, BorderLayout.CENTER);
+        return panel;
+    }
+
+    // ─── Testcase Results Panel ──────────────────────────────────────────────
+
+    private JPanel createTestcasePanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BG);
+        panel.setBorder(new EmptyBorder(6, 10, 6, 10));
+
+        // Testcase filter bar
+        JPanel tcFilterBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        tcFilterBar.setBackground(BG2);
+        tcFilterBar.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+        tcModeCombo = darkCombo(new String[]{"All Modes", "PASSIVE", "ACTIVE"});
+        tcModeCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyTcFilters(); });
+        tcStatusCombo = darkCombo(new String[]{"All Results", "PASS", "FAIL", "ERROR", "INCONCLUSIVE", "NOT_TESTED"});
+        tcStatusCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyTcFilters(); });
+        tcCategoryCombo = darkCombo(new String[]{"All Categories"});
+        tcCategoryCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyTcFilters(); });
+
+        tcFilterBar.add(label("Mode")); tcFilterBar.add(tcModeCombo);
+        tcFilterBar.add(label("Result")); tcFilterBar.add(tcStatusCombo);
+        tcFilterBar.add(label("Category")); tcFilterBar.add(tcCategoryCombo);
+
+        JButton tcClear = pill("Reset", new Color(60, 64, 76), new Color(75, 80, 94));
+        tcClear.addActionListener(e -> {
+            tcModeCombo.setSelectedIndex(0);
+            tcStatusCombo.setSelectedIndex(0);
+            tcCategoryCombo.setSelectedIndex(0);
+            applyTcFilters();
+        });
+        tcFilterBar.add(tcClear);
+
+        JTable table = new JTable(tcTableModel);
+        styleTable(table);
+        applyTestcaseHeaderRenderer(table, 6, 11);
+
+        JScrollPane tableSp = new JScrollPane(table);
+        tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        tableSp.getViewport().setBackground(TBL_EVEN);
+        tableSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        tableSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+
+        // Request/Response detail panel
+        JTextArea requestArea = darkTextArea();
+        JTextArea responseArea = darkTextArea();
+
+        JPanel reqPanel = new JPanel(new BorderLayout());
+        reqPanel.setBackground(BG);
+        JLabel reqLabel = new JLabel("  REQUEST");
+        reqLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        reqLabel.setForeground(ACCENT);
+        reqLabel.setOpaque(true);
+        reqLabel.setBackground(BG2);
+        reqLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+        JScrollPane reqSp = new JScrollPane(requestArea);
+        reqSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        reqSp.getViewport().setBackground(BG_INPUT);
+        reqSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        reqSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        reqPanel.add(reqLabel, BorderLayout.NORTH);
+        reqPanel.add(reqSp, BorderLayout.CENTER);
+
+        JPanel respPanel = new JPanel(new BorderLayout());
+        respPanel.setBackground(BG);
+        JLabel respLabel = new JLabel("  RESPONSE");
+        respLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        respLabel.setForeground(TXT2);
+        respLabel.setOpaque(true);
+        respLabel.setBackground(BG2);
+        respLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        JScrollPane respSp = new JScrollPane(responseArea);
+        respSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        respSp.getViewport().setBackground(BG_INPUT);
+        respSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        respSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        respPanel.add(respLabel, BorderLayout.NORTH);
+        respPanel.add(respSp, BorderLayout.CENTER);
+
+        JSplitPane reqRespSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqPanel, respPanel);
+        reqRespSplit.setResizeWeight(0.5);
+        reqRespSplit.setDividerSize(4);
+        reqRespSplit.setBackground(BG);
+        reqRespSplit.setBorder(null);
+
+        // Detail wrapper with subtle close bar
+        JPanel detailWrapper = new JPanel(new BorderLayout());
+        detailWrapper.setBackground(BG);
+
+        JPanel detailHeaderBar = new JPanel(new BorderLayout());
+        detailHeaderBar.setBackground(BG2);
+        detailHeaderBar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER),
+                new EmptyBorder(2, 12, 2, 4)));
+
+        JLabel detailTitle = new JLabel("  Request / Response");
+        detailTitle.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        detailTitle.setForeground(TXT_M);
+
+        JButton closeDetailBtn = new JButton("✕");
+        closeDetailBtn.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        closeDetailBtn.setForeground(TXT_M);
+        closeDetailBtn.setBackground(BG2);
+        closeDetailBtn.setFocusPainted(false);
+        closeDetailBtn.setBorderPainted(false);
+        closeDetailBtn.setContentAreaFilled(false);
+        closeDetailBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeDetailBtn.setBorder(new EmptyBorder(2, 10, 2, 10));
+        closeDetailBtn.setToolTipText("Close viewer");
+        closeDetailBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { closeDetailBtn.setForeground(RED_FG); }
+            @Override public void mouseExited(MouseEvent e) { closeDetailBtn.setForeground(TXT_M); }
+        });
+
+        detailHeaderBar.add(detailTitle, BorderLayout.WEST);
+        detailHeaderBar.add(closeDetailBtn, BorderLayout.EAST);
+
+        detailWrapper.add(detailHeaderBar, BorderLayout.NORTH);
+        detailWrapper.add(reqRespSplit, BorderLayout.CENTER);
+
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableSp, detailWrapper);
+        mainSplit.setResizeWeight(0.55);
+        mainSplit.setDividerSize(5);
+        mainSplit.setBackground(BG);
+        mainSplit.setBorder(null);
+
+        JPanel contentWrapper = new JPanel(new BorderLayout());
+        contentWrapper.setBackground(BG);
+        contentWrapper.add(tableSp, BorderLayout.CENTER);
+        final boolean[] detailShown = {false};
+
+        closeDetailBtn.addActionListener(ev -> {
+            table.clearSelection();
+            requestArea.setText("");
+            responseArea.setText("");
+            reqLabel.setText("  REQUEST");
+            respLabel.setText("  RESPONSE");
+            if (detailShown[0]) {
+                contentWrapper.removeAll();
+                contentWrapper.add(tableSp, BorderLayout.CENTER);
+                contentWrapper.revalidate();
+                contentWrapper.repaint();
+                detailShown[0] = false;
+            }
+        });
+
+        table.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            int viewRow = table.getSelectedRow();
+            if (viewRow < 0) {
+                requestArea.setText("");
+                responseArea.setText("");
+                reqLabel.setText("  REQUEST");
+                respLabel.setText("  RESPONSE");
+                if (detailShown[0]) {
+                    contentWrapper.removeAll();
+                    contentWrapper.add(tableSp, BorderLayout.CENTER);
+                    contentWrapper.revalidate();
+                    contentWrapper.repaint();
+                    detailShown[0] = false;
+                }
+                return;
+            }
+            int modelRow = table.convertRowIndexToModel(viewRow);
+            List<TestcaseResult> data = tcTableModel.getData();
+            if (modelRow < 0 || modelRow >= data.size()) return;
+
+            TestcaseResult r = data.get(modelRow);
+
+            String reqText = r.requestData();
+            String respText = r.responseData();
+            requestArea.setText(reqText != null ? reqText : "(No request data captured)");
+            responseArea.setText(respText != null ? respText : "(No response data captured)");
+            requestArea.setCaretPosition(0);
+            responseArea.setCaretPosition(0);
+
+            if (!detailShown[0]) {
+                contentWrapper.removeAll();
+                mainSplit.setTopComponent(tableSp);
+                mainSplit.setBottomComponent(detailWrapper);
+                contentWrapper.add(mainSplit, BorderLayout.CENTER);
+                contentWrapper.revalidate();
+                contentWrapper.repaint();
+                SwingUtilities.invokeLater(() -> mainSplit.setDividerLocation(0.55));
+                detailShown[0] = true;
+            }
+            table.requestFocusInWindow();
+        });
+
+        addDetailArrowNav(table, requestArea, responseArea);
+
+        panel.add(tcFilterBar, BorderLayout.NORTH);
+        panel.add(contentWrapper, BorderLayout.CENTER);
+        return panel;
+    }
+
+    // ─── Repeater Requests Panel ─────────────────────────────────────────────
+
+    private JPanel createRepeaterPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BG);
+        panel.setBorder(new EmptyBorder(6, 10, 6, 10));
+
+        // Filter bar
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        bar.setBackground(BG2);
+        bar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
+                new EmptyBorder(6, 14, 6, 14)));
+
+        repSearchField = darkField(14);
+        repSearchField.setToolTipText("Search host/path");
+        repSearchField.addActionListener(e -> applyRepeaterFilters());
+        bar.add(label("Search")); bar.add(repSearchField);
+
+        repHostCombo = darkCombo(new String[]{"All Hosts"});
+        repHostCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyRepeaterFilters(); });
+        bar.add(label("Host")); bar.add(repHostCombo);
+
+        repStatusCombo = darkCombo(new String[]{"All Status Code"});
+        repStatusCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyRepeaterFilters(); });
+        bar.add(label("Status Code")); bar.add(repStatusCombo);
+
+        repHeaderCombo = darkCombo(new String[]{
+                "All Headers", "Any Missing", "HSTS Missing", "Cache-Control Missing",
+                "XFO Missing", "XCTO Missing", "ACAO Missing", "CSP Missing"});
+        repHeaderCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyRepeaterFilters(); });
+        bar.add(label("Header")); bar.add(repHeaderCombo);
+
+        JButton clearFilt = pill("Reset", new Color(60, 64, 76), new Color(75, 80, 94));
+        clearFilt.addActionListener(e -> clearRepeaterFilters());
+        bar.add(clearFilt);
+
+        repFilterIndicator = new JLabel("");
+        repFilterIndicator.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        repFilterIndicator.setForeground(ACCENT);
+        bar.add(repFilterIndicator);
+
+        JLabel info = new JLabel("  Header status only — no testcases");
+        info.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        info.setForeground(TXT_M);
+        bar.add(Box.createHorizontalStrut(8));
+        bar.add(info);
+
+        // Table
+        JTable table = new JTable(repeaterTableModel);
+        styleTable(table);
+        applyPresenceRenderer(table, 4, 9);
+
+        JScrollPane tableSp = new JScrollPane(table);
+        tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        tableSp.getViewport().setBackground(TBL_EVEN);
+        tableSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        tableSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+
+        // Request/Response detail
+        JTextArea requestArea = darkTextArea();
+        JTextArea responseArea = darkTextArea();
+
+        JPanel reqPanel = new JPanel(new BorderLayout());
+        reqPanel.setBackground(BG);
+        JLabel reqLabel = new JLabel("  REQUEST");
+        reqLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        reqLabel.setForeground(ACCENT);
+        reqLabel.setOpaque(true);
+        reqLabel.setBackground(BG2);
+        reqLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+        JScrollPane reqSp = new JScrollPane(requestArea);
+        reqSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        reqSp.getViewport().setBackground(BG_INPUT);
+        reqSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        reqSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        reqPanel.add(reqLabel, BorderLayout.NORTH);
+        reqPanel.add(reqSp, BorderLayout.CENTER);
+
+        JPanel respPanel = new JPanel(new BorderLayout());
+        respPanel.setBackground(BG);
+        JLabel respLabel = new JLabel("  RESPONSE");
+        respLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        respLabel.setForeground(TXT2);
+        respLabel.setOpaque(true);
+        respLabel.setBackground(BG2);
+        respLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        JScrollPane respSp = new JScrollPane(responseArea);
+        respSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        respSp.getViewport().setBackground(BG_INPUT);
+        respSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        respSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        respPanel.add(respLabel, BorderLayout.NORTH);
+        respPanel.add(respSp, BorderLayout.CENTER);
+
+        JSplitPane reqRespSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqPanel, respPanel);
+        reqRespSplit.setResizeWeight(0.5);
+        reqRespSplit.setDividerSize(4);
+        reqRespSplit.setBackground(BG);
+        reqRespSplit.setBorder(null);
+
+        // Detail wrapper with subtle close bar
+        JPanel detailWrapper = new JPanel(new BorderLayout());
+        detailWrapper.setBackground(BG);
+
+        JPanel detailHeaderBar = new JPanel(new BorderLayout());
+        detailHeaderBar.setBackground(BG2);
+        detailHeaderBar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER),
+                new EmptyBorder(2, 12, 2, 4)));
+
+        JLabel detailTitle = new JLabel("  Request / Response");
+        detailTitle.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        detailTitle.setForeground(TXT_M);
+
+        JButton closeDetailBtn = new JButton("✕");
+        closeDetailBtn.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        closeDetailBtn.setForeground(TXT_M);
+        closeDetailBtn.setBackground(BG2);
+        closeDetailBtn.setFocusPainted(false);
+        closeDetailBtn.setBorderPainted(false);
+        closeDetailBtn.setContentAreaFilled(false);
+        closeDetailBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeDetailBtn.setBorder(new EmptyBorder(2, 10, 2, 10));
+        closeDetailBtn.setToolTipText("Close viewer");
+        closeDetailBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { closeDetailBtn.setForeground(RED_FG); }
+            @Override public void mouseExited(MouseEvent e) { closeDetailBtn.setForeground(TXT_M); }
+        });
+
+        detailHeaderBar.add(detailTitle, BorderLayout.WEST);
+        detailHeaderBar.add(closeDetailBtn, BorderLayout.EAST);
+
+        detailWrapper.add(detailHeaderBar, BorderLayout.NORTH);
+        detailWrapper.add(reqRespSplit, BorderLayout.CENTER);
+
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableSp, detailWrapper);
+        mainSplit.setResizeWeight(0.55);
+        mainSplit.setDividerSize(5);
+        mainSplit.setBackground(BG);
+        mainSplit.setBorder(null);
+
+        JPanel contentWrapper = new JPanel(new BorderLayout());
+        contentWrapper.setBackground(BG);
+        contentWrapper.add(tableSp, BorderLayout.CENTER);
+        final boolean[] detailShown = {false};
+
+        closeDetailBtn.addActionListener(ev -> {
+            table.clearSelection();
+            requestArea.setText("");
+            responseArea.setText("");
+            reqLabel.setText("  REQUEST");
+            respLabel.setText("  RESPONSE");
+            if (detailShown[0]) {
+                contentWrapper.removeAll();
+                contentWrapper.add(tableSp, BorderLayout.CENTER);
+                contentWrapper.revalidate();
+                contentWrapper.repaint();
+                detailShown[0] = false;
+            }
+        });
+
+        table.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            int viewRow = table.getSelectedRow();
+            if (viewRow < 0) {
+                requestArea.setText("");
+                responseArea.setText("");
+                reqLabel.setText("  REQUEST");
+                respLabel.setText("  RESPONSE");
+                if (detailShown[0]) {
+                    contentWrapper.removeAll();
+                    contentWrapper.add(tableSp, BorderLayout.CENTER);
+                    contentWrapper.revalidate();
+                    contentWrapper.repaint();
+                    detailShown[0] = false;
+                }
+                return;
+            }
+            int modelRow = table.convertRowIndexToModel(viewRow);
+            List<HeaderResult> data = repeaterTableModel.getData();
+            if (modelRow < 0 || modelRow >= data.size()) return;
+
+            HeaderResult r = data.get(modelRow);
+
+            String reqText = r.rawRequest();
+            String respText = r.rawResponse();
+            requestArea.setText(reqText != null ? reqText : "(No request data captured)");
+            responseArea.setText(respText != null ? respText : "(No response data captured)");
+            requestArea.setCaretPosition(0);
+            responseArea.setCaretPosition(0);
+
+            if (!detailShown[0]) {
+                contentWrapper.removeAll();
+                mainSplit.setTopComponent(tableSp);
+                mainSplit.setBottomComponent(detailWrapper);
+                contentWrapper.add(mainSplit, BorderLayout.CENTER);
+                contentWrapper.revalidate();
+                contentWrapper.repaint();
+                SwingUtilities.invokeLater(() -> mainSplit.setDividerLocation(0.55));
+                detailShown[0] = true;
+            }
+            table.requestFocusInWindow();
+        });
+
+        addDetailArrowNav(table, requestArea, responseArea);
+
+        panel.add(bar, BorderLayout.NORTH);
+        panel.add(contentWrapper, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JTextArea darkTextArea() {
+        JTextArea area = new JTextArea();
+        area.setEditable(false);
+        area.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        area.setBackground(BG_INPUT);
+        area.setForeground(TXT);
+        area.setCaretColor(ACCENT);
+        area.setSelectionColor(TBL_SEL);
+        area.setSelectedTextColor(TXT);
+        area.setMargin(new Insets(6, 8, 6, 8));
+        area.setLineWrap(false);
+        return area;
+    }
+
+    private void addDetailArrowNav(JTable table, JTextArea requestArea, JTextArea responseArea) {
+        KeyAdapter nav = new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_UP || e.getKeyCode() == KeyEvent.VK_DOWN) {
+                    int row = table.getSelectedRow();
+                    int next = e.getKeyCode() == KeyEvent.VK_UP ? row - 1 : row + 1;
+                    if (next >= 0 && next < table.getRowCount()) {
+                        table.setRowSelectionInterval(next, next);
+                        table.scrollRectToVisible(table.getCellRect(next, 0, true));
+                    }
+                    e.consume();
+                }
+            }
+        };
+        requestArea.addKeyListener(nav);
+        responseArea.addKeyListener(nav);
+    }
+
+    // ─── Testcase Catalog ─────────────────────────────────────────────────
+
+    private CatalogTableModel catalogModel;
+
+    private JPanel createCatalogPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BG);
+        panel.setBorder(new EmptyBorder(6, 10, 6, 10));
+
+        catalogModel = new CatalogTableModel(library, selector);
+
+        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        toolbar.setBackground(BG2);
+        toolbar.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+        catalogSearchField = darkField(14);
+        catalogSearchField.setToolTipText("Search ID, name, or description");
+        catalogSearchField.addActionListener(e -> applyCatalogSearch());
+        toolbar.add(label("Search")); toolbar.add(catalogSearchField);
+
+        JButton catalogSearchBtn = pill("Filter", ACCENT, ACCENT_H);
+        catalogSearchBtn.addActionListener(e -> applyCatalogSearch());
+        toolbar.add(catalogSearchBtn);
+
+        JButton catalogClearBtn = pill("Show All", new Color(60, 64, 76), new Color(75, 80, 94));
+        catalogClearBtn.addActionListener(e -> {
+            catalogSearchField.setText("");
+            applyCatalogSearch();
+        });
+        toolbar.add(catalogClearBtn);
+
+        toolbar.add(Box.createHorizontalStrut(12));
+
+        JButton selectAll = pill("Select All", ACCENT, ACCENT_H);
+        selectAll.addActionListener(e -> {
+            selector.enableAll();
+            catalogModel.fireTableDataChanged();
+            statusLabel.setText("All " + library.size() + " testcases enabled");
+            statusLabel.setForeground(ACCENT);
+        });
+
+        JButton deselectAll = pill("Deselect All", BTN_MUTED, BTN_MUTED_H);
+        deselectAll.addActionListener(e -> {
+            Set<String> allIds = new HashSet<>();
+            for (TestcaseDefinition td : library.getAll()) allIds.add(td.id());
+            selector.disableAll(allIds);
+            catalogModel.fireTableDataChanged();
+            statusLabel.setText("All testcases disabled");
+            statusLabel.setForeground(RED_FG);
+        });
+
+        JComboBox<String> catFilterCombo = darkCombo(new String[]{"All Categories"});
+        Set<String> cats = new TreeSet<>();
+        for (TestcaseDefinition td : library.getAll()) {
+            if (!td.category().isEmpty()) cats.add(td.category());
+        }
+        cats.forEach(catFilterCombo::addItem);
+
+        JButton selectCat = pill("Select Category", ACCENT, ACCENT_H);
+        selectCat.addActionListener(e -> {
+            String cat = (String) catFilterCombo.getSelectedItem();
+            if (cat == null || cat.startsWith("All")) return;
+            for (TestcaseDefinition td : library.getAll()) {
+                if (td.category().equals(cat)) selector.setEnabled(td.id(), true);
+            }
+            catalogModel.fireTableDataChanged();
+            statusLabel.setText("Enabled all " + cat + " testcases");
+            statusLabel.setForeground(ACCENT);
+        });
+
+        JButton deselectCat = pill("Deselect Category", new Color(60, 64, 76), new Color(75, 80, 94));
+        deselectCat.addActionListener(e -> {
+            String cat = (String) catFilterCombo.getSelectedItem();
+            if (cat == null || cat.startsWith("All")) return;
+            for (TestcaseDefinition td : library.getAll()) {
+                if (td.category().equals(cat)) selector.setEnabled(td.id(), false);
+            }
+            catalogModel.fireTableDataChanged();
+            statusLabel.setText("Disabled all " + cat + " testcases");
+            statusLabel.setForeground(RED_FG);
+        });
+
+        toolbar.add(selectAll);
+        toolbar.add(deselectAll);
+        toolbar.add(Box.createHorizontalStrut(12));
+        toolbar.add(label("Category"));
+        toolbar.add(catFilterCombo);
+        toolbar.add(selectCat);
+        toolbar.add(deselectCat);
+
+        JTable table = new JTable(catalogModel);
+        styleTable(table);
+        table.getColumnModel().getColumn(0).setMaxWidth(50);
+        table.getColumnModel().getColumn(0).setMinWidth(50);
+        table.getColumnModel().getColumn(1).setPreferredWidth(120);
+        table.getColumnModel().getColumn(2).setPreferredWidth(200);
+        table.getColumnModel().getColumn(3).setPreferredWidth(400);
+        table.getColumnModel().getColumn(4).setPreferredWidth(100);
+        table.getColumnModel().getColumn(5).setPreferredWidth(80);
+
+        table.getColumnModel().getColumn(0).setCellRenderer(new CheckboxRenderer());
+        table.getColumnModel().getColumn(0).setCellEditor(new DefaultCellEditor(new JCheckBox()) {
+            {
+                JCheckBox cb = (JCheckBox) getComponent();
+                cb.setHorizontalAlignment(SwingConstants.CENTER);
+                cb.setBackground(BG_ELEV);
+            }
+        });
+
+        DefaultTableCellRenderer modeRenderer = new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int col) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, col);
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                l.setFont(new Font("SansSerif", Font.BOLD, 10));
+                if (!sel && val instanceof String s) {
+                    switch (s) {
+                        case "BOTH", "PASSIVE", "ACTIVE" -> { l.setBackground(new Color(30, 38, 52)); l.setForeground(ACCENT); }
+                        default -> { l.setBackground(row % 2 == 0 ? TBL_EVEN : TBL_ODD); l.setForeground(TXT); }
+                    }
+                }
+                l.setBorder(new EmptyBorder(0, 8, 0, 8));
+                l.setOpaque(true);
+                return l;
+            }
+        };
+        table.getColumnModel().getColumn(5).setCellRenderer(modeRenderer);
+
+        table.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                int row = table.rowAtPoint(e.getPoint());
+                int col = table.columnAtPoint(e.getPoint());
+                if (row >= 0 && col != 0) {
+                    int modelRow = table.convertRowIndexToModel(row);
+                    Boolean current = (Boolean) catalogModel.getValueAt(modelRow, 0);
+                    catalogModel.setValueAt(!current, modelRow, 0);
+                }
+            }
+        });
+
+        JScrollPane sp = new JScrollPane(table);
+        sp.setBorder(BorderFactory.createLineBorder(BORDER));
+        sp.getViewport().setBackground(TBL_EVEN);
+        sp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        sp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+
+        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        bottom.setBackground(BG2);
+        bottom.setBorder(new EmptyBorder(4, 8, 4, 8));
+        JLabel countLabel = new JLabel(library.size() + " testcases in catalog | All enabled");
+        countLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        countLabel.setForeground(TXT2);
+        bottom.add(countLabel);
+
+        catalogModel.addTableModelListener(e -> {
+            int disabled = selector.disabledCount();
+            int total = library.size();
+            int enabled = total - disabled;
+            countLabel.setText(total + " testcases in catalog | " + enabled + " enabled, " + disabled + " disabled");
+            countLabel.setForeground(disabled > 0 ? WARN_FG : ACCENT);
+        });
+
+        panel.add(toolbar, BorderLayout.NORTH);
+        panel.add(sp, BorderLayout.CENTER);
+        panel.add(bottom, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    private static class CatalogTableModel extends AbstractTableModel {
+        private static final String[] COLS = {"Enabled", "ID", "Name", "Description", "Category", "Mode"};
+        private final List<TestcaseDefinition> allTcs;
+        private List<TestcaseDefinition> filtered;
+        private final TestcaseSelector selector;
+
+        CatalogTableModel(TestcaseLibrary library, TestcaseSelector selector) {
+            this.allTcs = library.getAll();
+            this.filtered = allTcs;
+            this.selector = selector;
+        }
+
+        void applyFilter(String search) {
+            if (search == null || search.isBlank()) {
+                filtered = allTcs;
+            } else {
+                String lower = search.trim().toLowerCase();
+                filtered = allTcs.stream().filter(td ->
+                        td.id().toLowerCase().contains(lower)
+                        || td.name().toLowerCase().contains(lower)
+                        || td.description().toLowerCase().contains(lower)
+                        || td.category().toLowerCase().contains(lower)
+                ).collect(Collectors.toList());
+            }
+            fireTableDataChanged();
+        }
+
+        @Override public int getRowCount() { return filtered.size(); }
+        @Override public int getColumnCount() { return COLS.length; }
+        @Override public String getColumnName(int col) { return COLS[col]; }
+
+        @Override public Class<?> getColumnClass(int col) {
+            return col == 0 ? Boolean.class : String.class;
+        }
+
+        @Override public boolean isCellEditable(int row, int col) {
+            return col == 0;
+        }
+
+        @Override public Object getValueAt(int row, int col) {
+            TestcaseDefinition td = filtered.get(row);
+            return switch (col) {
+                case 0 -> selector.isEnabled(td.id());
+                case 1 -> td.id();
+                case 2 -> td.name();
+                case 3 -> td.description();
+                case 4 -> td.category();
+                case 5 -> td.mode().name();
+                default -> "";
+            };
+        }
+
+        @Override public void setValueAt(Object value, int row, int col) {
+            if (col == 0) {
+                TestcaseDefinition td = filtered.get(row);
+                selector.setEnabled(td.id(), (Boolean) value);
+                fireTableCellUpdated(row, col);
+            }
+        }
+    }
+
+    private class CheckboxRenderer extends JCheckBox implements javax.swing.table.TableCellRenderer {
+        CheckboxRenderer() {
+            setHorizontalAlignment(SwingConstants.CENTER);
+            setOpaque(true);
+        }
+
+        @Override public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean sel, boolean foc, int row, int col) {
+            setSelected(value instanceof Boolean b && b);
+            setBackground(sel ? TBL_SEL : (row % 2 == 0 ? TBL_EVEN : TBL_ODD));
+            setForeground(ACCENT);
+            return this;
+        }
+    }
+
+    private JPanel createScopeExportPanel() {
+        JPanel panel = new JPanel(new BorderLayout(0, 12));
+        panel.setBackground(BG);
+        panel.setBorder(new EmptyBorder(10, 14, 10, 14));
+
+        // --- Scope section (Burp-style table with Add/Edit/Remove) ---
+        JPanel scopeRow = new JPanel(new GridLayout(1, 2, 14, 0));
+        scopeRow.setOpaque(false);
+
+        scopeRow.add(buildScopeTable("Include in scope", ACCENT, true));
+        scopeRow.add(buildScopeTable("Exclude from scope", RED_FG, false));
+
+        JPanel scopeSection = new JPanel(new BorderLayout(0, 8));
+        scopeSection.setOpaque(false);
+        scopeSection.add(sectionLabel("SCOPE CONFIGURATION"), BorderLayout.NORTH);
+        scopeSection.add(scopeRow, BorderLayout.CENTER);
+
+        // --- Export section ---
+        JPanel exportSection = new JPanel(new BorderLayout(0, 8));
+        exportSection.setOpaque(false);
+        exportSection.add(sectionLabel("EXPORT"), BorderLayout.NORTH);
+
+        JPanel exportBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        exportBtns.setOpaque(false);
+
+        JButton expFiltered = pill("Filtered Raw CSV", ACCENT, ACCENT_H);
+        expFiltered.addActionListener(e -> exportFilteredRaw());
+        JButton expAll = pill("All Raw CSV", BTN_MUTED, BTN_MUTED_H);
+        expAll.addActionListener(e -> exportAllRaw());
+        JButton expTc = pill("Testcase CSV", BTN_MUTED, BTN_MUTED_H);
+        expTc.addActionListener(e -> exportTestcaseResults());
+        JButton expZip = pill("All Datasets ZIP", ACCENT, ACCENT_H);
+        expZip.addActionListener(e -> exportAllZip());
+
+        exportBtns.add(expFiltered);
+        exportBtns.add(expAll);
+        exportBtns.add(expTc);
+        exportBtns.add(expZip);
+        exportSection.add(exportBtns, BorderLayout.CENTER);
+
+        JPanel importSection = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        importSection.setOpaque(false);
+        JButton importBtn = pill("Import Workbook", BTN_MUTED, BTN_MUTED_H);
+        importBtn.addActionListener(e -> importWorkbook());
+        importSection.add(importBtn);
+
+        JPanel bottomRow = new JPanel(new BorderLayout(0, 12));
+        bottomRow.setOpaque(false);
+        bottomRow.add(exportSection, BorderLayout.NORTH);
+        bottomRow.add(importSection, BorderLayout.SOUTH);
+
+        panel.add(scopeSection, BorderLayout.CENTER);
+        panel.add(bottomRow, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    private JPanel buildScopeTable(String title, Color accent, boolean isAllowlist) {
+        JPanel card = new JPanel(new BorderLayout(0, 6));
+        card.setBackground(BG_ELEV);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_S),
+                new EmptyBorder(10, 12, 10, 12)));
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        titleLabel.setForeground(accent);
+
+        JLabel hint = new JLabel(isAllowlist
+                ? "If empty, all hosts are in scope. Supports wildcards: *.example.com"
+                : "Blocklist takes precedence over allowlist. Supports wildcards: *.example.com");
+        hint.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        hint.setForeground(TXT_M);
+
+        JPanel headerPanel = new JPanel();
+        headerPanel.setOpaque(false);
+        headerPanel.setLayout(new BoxLayout(headerPanel, BoxLayout.Y_AXIS));
+        headerPanel.add(titleLabel);
+        headerPanel.add(Box.createVerticalStrut(2));
+        headerPanel.add(hint);
+
+        // Table model: Enabled | Host pattern
+        javax.swing.table.DefaultTableModel model = new javax.swing.table.DefaultTableModel(
+                new Object[]{"Enabled", "Host Pattern"}, 0) {
+            @Override public Class<?> getColumnClass(int col) {
+                return col == 0 ? Boolean.class : String.class;
+            }
+            @Override public boolean isCellEditable(int row, int col) { return true; }
+        };
+
+        JTable table = new JTable(model);
+        styleTable(table);
+        table.getColumnModel().getColumn(0).setMaxWidth(60);
+        table.getColumnModel().getColumn(0).setMinWidth(60);
+
+        JScrollPane sp = new JScrollPane(table);
+        sp.setBorder(BorderFactory.createLineBorder(BORDER_S));
+        sp.getViewport().setBackground(TBL_EVEN);
+        sp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        sp.setPreferredSize(new Dimension(300, 160));
+
+        // Buttons
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        btnPanel.setOpaque(false);
+
+        JButton addBtn = pill("Add", ACCENT, ACCENT_H);
+        addBtn.addActionListener(e -> {
+            String pattern = JOptionPane.showInputDialog(SecurityHeadersTab.this,
+                    "Enter host pattern (e.g. example.com or *.example.com):",
+                    "Add " + title, JOptionPane.PLAIN_MESSAGE);
+            if (pattern != null && !pattern.trim().isEmpty()) {
+                model.addRow(new Object[]{Boolean.TRUE, pattern.trim().toLowerCase()});
+                syncScopeFromTable(model, isAllowlist);
+            }
+        });
+
+        JButton editBtn = pill("Edit", BTN_MUTED, BTN_MUTED_H);
+        editBtn.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row < 0) return;
+            String current = (String) model.getValueAt(row, 1);
+            String pattern = JOptionPane.showInputDialog(SecurityHeadersTab.this,
+                    "Edit host pattern:", current);
+            if (pattern != null && !pattern.trim().isEmpty()) {
+                model.setValueAt(pattern.trim().toLowerCase(), row, 1);
+                syncScopeFromTable(model, isAllowlist);
+            }
+        });
+
+        JButton removeBtn = pill("Remove", new Color(70, 40, 44), new Color(90, 50, 55));
+        removeBtn.setForeground(RED_FG);
+        removeBtn.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row >= 0) {
+                model.removeRow(row);
+                syncScopeFromTable(model, isAllowlist);
+            }
+        });
+
+        JButton pasteBtn = pill("Paste", BTN_MUTED, BTN_MUTED_H);
+        pasteBtn.setToolTipText("Paste hosts from clipboard (one per line)");
+        pasteBtn.addActionListener(e -> {
+            try {
+                String clip = (String) Toolkit.getDefaultToolkit()
+                        .getSystemClipboard().getData(java.awt.datatransfer.DataFlavor.stringFlavor);
+                if (clip != null) {
+                    for (String line : clip.split("\\R")) {
+                        String trimmed = line.trim().toLowerCase();
+                        if (!trimmed.isEmpty()) {
+                            model.addRow(new Object[]{Boolean.TRUE, trimmed});
+                        }
+                    }
+                    syncScopeFromTable(model, isAllowlist);
+                }
+            } catch (Exception ignored) {}
+        });
+
+        btnPanel.add(addBtn);
+        btnPanel.add(editBtn);
+        btnPanel.add(removeBtn);
+        btnPanel.add(pasteBtn);
+
+        // Sync on cell edits (enable/disable toggle, inline host edit)
+        model.addTableModelListener(e -> syncScopeFromTable(model, isAllowlist));
+
+        card.add(headerPanel, BorderLayout.NORTH);
+        card.add(sp, BorderLayout.CENTER);
+        card.add(btnPanel, BorderLayout.SOUTH);
+        return card;
+    }
+
+    private void syncScopeFromTable(javax.swing.table.DefaultTableModel model, boolean isAllowlist) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < model.getRowCount(); i++) {
+            Boolean enabled = (Boolean) model.getValueAt(i, 0);
+            String pattern = (String) model.getValueAt(i, 1);
+            if (Boolean.TRUE.equals(enabled) && pattern != null && !pattern.isBlank()) {
+                sb.append(pattern.trim()).append("\n");
+            }
+        }
+        if (isAllowlist) {
+            scopeManager.updateAllowlist(sb.toString());
+        } else {
+            scopeManager.updateBlocklist(sb.toString());
+        }
+        statusLabel.setText("Scope updated");
+        statusLabel.setForeground(ACCENT);
+    }
+
+    // ─── Workbook import ────────────────────────────────────────────────────
+
+    private void importWorkbook() {
+        JFileChooser fc = new JFileChooser();
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Excel Workbooks", "xlsx", "xls"));
+        if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+        File file = fc.getSelectedFile();
+        new SwingWorker<Void, Void>() {
+            int imported = 0;
+            @Override protected Void doInBackground() throws Exception {
+                WorkbookImporter importer = new WorkbookImporter();
+                List<TestcaseDefinition> tcs = importer.importTestcases(file);
+                for (TestcaseDefinition tc : tcs) {
+                    library.addOrReplace(tc);
+                }
+                importer.importBaseline(file);
+                imported = tcs.size();
+                return null;
+            }
+            @Override protected void done() {
+                try {
+                    get();
+                    statusLabel.setText("Imported " + imported + " testcases from workbook");
+                    statusLabel.setForeground(ACCENT);
+                } catch (Exception ex) {
+                    statusLabel.setText("Import failed: " + ex.getCause().getMessage());
+                    statusLabel.setForeground(RED_FG);
+                }
+            }
+        }.execute();
+    }
+
+    // ─── Refresh / Filter ────────────────────────────────────────────────────
+
+    public void refreshViews() {
+        refreshingCombos = true;
+        try {
+            List<HeaderResult> all = resultStore.getAll();
+
+            // Update Raw Results filter combos
+            Set<String> hosts = all.stream().map(HeaderResult::host).collect(Collectors.toCollection(TreeSet::new));
+            String selectedHost = (String) rawHostCombo.getSelectedItem();
+            rawHostCombo.removeAllItems();
+            rawHostCombo.addItem("All Hosts");
+            hosts.forEach(rawHostCombo::addItem);
+            if (selectedHost != null && hosts.contains(selectedHost)) {
+                rawHostCombo.setSelectedItem(selectedHost);
+            }
+
+            Set<Integer> statuses = all.stream().map(HeaderResult::statusCode).collect(Collectors.toCollection(TreeSet::new));
+            String selectedStatus = (String) rawStatusCombo.getSelectedItem();
+            rawStatusCombo.removeAllItems();
+            rawStatusCombo.addItem("All Status Code");
+            statuses.forEach(s -> rawStatusCombo.addItem(String.valueOf(s)));
+            if (selectedStatus != null) {
+                for (int i = 0; i < rawStatusCombo.getItemCount(); i++) {
+                    if (rawStatusCombo.getItemAt(i).equals(selectedStatus)) {
+                        rawStatusCombo.setSelectedIndex(i);
+                        break;
+                    }
+                }
+            }
+
+            // Update summary cards from ALL data (unfiltered)
+            SummaryStats stats = summaryService.computeStats(all);
+            cardResponses.setText(String.valueOf(stats.responsesAnalyzed()));
+            cardWithMissing.setText(String.valueOf(stats.responsesWithMissing()));
+            cardHosts.setText(String.valueOf(stats.hostsObserved()));
+            cardMissingOccur.setText(String.valueOf(stats.missingOccurrences()));
+
+            // Update Endpoint Summary host combo
+            Set<String> epHosts = all.stream().map(HeaderResult::host).collect(Collectors.toCollection(TreeSet::new));
+            String selectedEpHost = (String) epHostCombo.getSelectedItem();
+            epHostCombo.removeAllItems();
+            epHostCombo.addItem("All Hosts");
+            epHosts.forEach(epHostCombo::addItem);
+            if (selectedEpHost != null && epHosts.contains(selectedEpHost)) {
+                epHostCombo.setSelectedItem(selectedEpHost);
+            }
+        } finally {
+            refreshingCombos = false;
+        }
+
+        applyRawFilters();
+        applyHostFilters();
+        applyEpFilters();
+    }
+
+    public void refreshRepeaterViews() {
+        refreshingCombos = true;
+        try {
+            List<HeaderResult> all = repeaterResultStore.getAll();
+
+            Set<String> hosts = all.stream().map(HeaderResult::host).collect(Collectors.toCollection(TreeSet::new));
+            String selectedHost = (String) repHostCombo.getSelectedItem();
+            repHostCombo.removeAllItems();
+            repHostCombo.addItem("All Hosts");
+            hosts.forEach(repHostCombo::addItem);
+            if (selectedHost != null && hosts.contains(selectedHost)) {
+                repHostCombo.setSelectedItem(selectedHost);
+            }
+
+            Set<Integer> statuses = all.stream().map(HeaderResult::statusCode).collect(Collectors.toCollection(TreeSet::new));
+            String selectedStatus = (String) repStatusCombo.getSelectedItem();
+            repStatusCombo.removeAllItems();
+            repStatusCombo.addItem("All Status Code");
+            statuses.forEach(s -> repStatusCombo.addItem(String.valueOf(s)));
+            if (selectedStatus != null) {
+                for (int i = 0; i < repStatusCombo.getItemCount(); i++) {
+                    if (repStatusCombo.getItemAt(i).equals(selectedStatus)) {
+                        repStatusCombo.setSelectedIndex(i);
+                        break;
+                    }
+                }
+            }
+        } finally {
+            refreshingCombos = false;
+        }
+
+        applyRepeaterFilters();
+    }
+
+    public void refreshTestcaseViews() {
+        refreshingCombos = true;
+        try {
+            List<TestcaseResult> all = tcResultStore.getAll();
+
+            Set<String> categories = new TreeSet<>();
+            for (TestcaseResult r : all) {
+                String tcId = r.testcaseId();
+                TestcaseDefinition def = library.get(tcId);
+                if (def != null && !def.category().isEmpty()) categories.add(def.category());
+            }
+            String selCat = (String) tcCategoryCombo.getSelectedItem();
+            tcCategoryCombo.removeAllItems();
+            tcCategoryCombo.addItem("All Categories");
+            categories.forEach(tcCategoryCombo::addItem);
+            if (selCat != null && categories.contains(selCat)) tcCategoryCombo.setSelectedItem(selCat);
+        } finally {
+            refreshingCombos = false;
+        }
+
+        applyTcFilters();
+    }
+
+    private void applyRawFilters() {
+        List<HeaderResult> all = resultStore.getAll();
+        FilterState fs = buildRawFilterState();
+        currentFiltered = filterService.apply(all, fs);
+        rawTableModel.setData(currentFiltered);
+        rawFilterIndicator.setText(fs.isActive() ? "Filtered" : "");
+    }
+
+    private void applyRepeaterFilters() {
+        List<HeaderResult> all = repeaterResultStore.getAll();
+        FilterState fs = buildRepeaterFilterState();
+        currentRepFiltered = filterService.apply(all, fs);
+        repeaterTableModel.setData(currentRepFiltered);
+        repFilterIndicator.setText(fs.isActive() ? "Filtered" : "");
+    }
+
+    private void applyTcFilters() {
+        List<TestcaseResult> all = tcResultStore.getAll();
+
+        String modeFilter = (String) tcModeCombo.getSelectedItem();
+        String statusFilter = (String) tcStatusCombo.getSelectedItem();
+        String catFilter = (String) tcCategoryCombo.getSelectedItem();
+
+        currentTcFiltered = all.stream().filter(r -> {
+            if (modeFilter != null && !modeFilter.startsWith("All")) {
+                if (!r.mode().name().equals(modeFilter)) return false;
+            }
+            if (statusFilter != null && !statusFilter.startsWith("All")) {
+                if (!r.status().name().equals(statusFilter)) return false;
+            }
+            if (catFilter != null && !catFilter.startsWith("All")) {
+                TestcaseDefinition def = library.get(r.testcaseId());
+                if (def == null || !def.category().equals(catFilter)) return false;
+            }
+            return true;
+        }).collect(Collectors.toList());
+
+        tcTableModel.setData(currentTcFiltered);
+
+        long total = all.size();
+        long pass = all.stream().filter(r -> r.status() == ResultStatus.PASS).count();
+        long fail = all.stream().filter(r -> r.status() == ResultStatus.FAIL).count();
+        long errors = all.stream().filter(r -> r.status() == ResultStatus.ERROR
+                || r.status() == ResultStatus.INCONCLUSIVE).count();
+
+        cardTcTotal.setText(String.valueOf(total));
+        cardTcPass.setText(String.valueOf(pass));
+        cardTcFail.setText(String.valueOf(fail));
+        cardTcError.setText(String.valueOf(errors));
+    }
+
+    private void clearRawFilters() {
+        rawSearchField.setText("");
+        rawHostCombo.setSelectedIndex(0);
+        rawStatusCombo.setSelectedIndex(0);
+        rawHeaderCombo.setSelectedIndex(0);
+        applyRawFilters();
+    }
+
+    private void clearRepeaterFilters() {
+        repSearchField.setText("");
+        repHostCombo.setSelectedIndex(0);
+        repStatusCombo.setSelectedIndex(0);
+        repHeaderCombo.setSelectedIndex(0);
+        applyRepeaterFilters();
+    }
+
+    private void applyHostFilters() {
+        List<HostSummary> all = summaryService.computeHostSummaries(resultStore.getAll());
+        String search = hostSearchField.getText().trim().toLowerCase();
+        int headerIdx = hostHeaderCombo.getSelectedIndex();
+
+        List<HostSummary> filtered = all.stream().filter(h -> {
+            if (!search.isEmpty() && !h.host().toLowerCase().contains(search)) return false;
+            return switch (headerIdx) {
+                case 1 -> h.responsesWithMissing() > 0;
+                case 2 -> h.hstsMissing() > 0;
+                case 3 -> h.cacheControlMissing() > 0;
+                case 4 -> h.xfoMissing() > 0;
+                case 5 -> h.xctoMissing() > 0;
+                case 6 -> h.acaoMissing() > 0;
+                case 7 -> h.cspMissing() > 0;
+                default -> true;
+            };
+        }).collect(Collectors.toList());
+
+        hostTableModel.setData(filtered);
+        boolean active = !search.isEmpty() || headerIdx > 0;
+        hostFilterIndicator.setText(active ? "Filtered" : "");
+    }
+
+    private void applyEpFilters() {
+        List<EndpointSummary> all = summaryService.computeEndpointSummaries(resultStore.getAll());
+        String search = epSearchField.getText().trim().toLowerCase();
+        String hostFilter = epHostCombo.getSelectedIndex() <= 0 ? null : (String) epHostCombo.getSelectedItem();
+        int headerIdx = epHeaderCombo.getSelectedIndex();
+
+        List<EndpointSummary> filtered = all.stream().filter(ep -> {
+            if (!search.isEmpty()
+                    && !ep.host().toLowerCase().contains(search)
+                    && !ep.pathAndQuery().toLowerCase().contains(search)) return false;
+            if (hostFilter != null && !ep.host().equalsIgnoreCase(hostFilter)) return false;
+            return switch (headerIdx) {
+                case 1 -> ep.responsesWithMissing() > 0;
+                case 2 -> ep.hstsMissing() > 0;
+                case 3 -> ep.cacheControlMissing() > 0;
+                case 4 -> ep.xfoMissing() > 0;
+                case 5 -> ep.xctoMissing() > 0;
+                case 6 -> ep.acaoMissing() > 0;
+                case 7 -> ep.cspMissing() > 0;
+                default -> true;
+            };
+        }).collect(Collectors.toList());
+
+        epTableModel.setData(filtered);
+        boolean active = !search.isEmpty() || hostFilter != null || headerIdx > 0;
+        epFilterIndicator.setText(active ? "Filtered" : "");
+    }
+
+    private void applyCatalogSearch() {
+        catalogModel.applyFilter(catalogSearchField.getText());
+    }
+
+    private FilterState buildRawFilterState() {
+        return buildFilterState(rawSearchField, rawHostCombo, rawStatusCombo, rawHeaderCombo);
+    }
+
+    private FilterState buildRepeaterFilterState() {
+        return buildFilterState(repSearchField, repHostCombo, repStatusCombo, repHeaderCombo);
+    }
+
+    private FilterState buildFilterState(JTextField searchField, JComboBox<String> hostCombo,
+                                          JComboBox<String> statusCombo, JComboBox<String> headerCombo) {
+        String search = searchField.getText();
+        String host = hostCombo.getSelectedIndex() <= 0 ? null : (String) hostCombo.getSelectedItem();
+        Set<Integer> statuses = Collections.emptySet();
+        if (statusCombo.getSelectedIndex() > 0) {
+            try {
+                statuses = Set.of(Integer.parseInt((String) statusCombo.getSelectedItem()));
+            } catch (NumberFormatException ignored) {}
+        }
+        FilterState.HeaderFilter hf = switch (headerCombo.getSelectedIndex()) {
+            case 1 -> FilterState.HeaderFilter.ANY_MISSING;
+            case 2 -> FilterState.HeaderFilter.HSTS_MISSING;
+            case 3 -> FilterState.HeaderFilter.CACHE_CONTROL_MISSING;
+            case 4 -> FilterState.HeaderFilter.XFO_MISSING;
+            case 5 -> FilterState.HeaderFilter.XCTO_MISSING;
+            case 6 -> FilterState.HeaderFilter.ACAO_MISSING;
+            case 7 -> FilterState.HeaderFilter.CSP_MISSING;
+            default -> FilterState.HeaderFilter.ALL;
+        };
+        return new FilterState(search, host, statuses, hf);
+    }
+
+    // ─── Export ──────────────────────────────────────────────────────────────
+
+    private void exportFilteredRaw() {
+        File f = chooseSave("filtered_raw_results.csv", "CSV Files", "csv");
+        if (f == null) return;
+        runExport(() -> csvExport.exportRawResults(f, currentFiltered), f);
+    }
+
+    private void exportAllRaw() {
+        File f = chooseSave("all_raw_results.csv", "CSV Files", "csv");
+        if (f == null) return;
+        runExport(() -> csvExport.exportRawResults(f, resultStore.getAll()), f);
+    }
+
+    private void exportTestcaseResults() {
+        File f = chooseSave("testcase_results.csv", "CSV Files", "csv");
+        if (f == null) return;
+        runExport(() -> csvExport.exportTestcaseResults(f, tcResultStore.getAll()), f);
+    }
+
+    private void exportAllZip() {
+        File f = chooseSave("security_headers_export.zip", "ZIP Files", "zip");
+        if (f == null) return;
+        List<HeaderResult> all = resultStore.getAll();
+        List<HostSummary> hs = summaryService.computeHostSummaries(all);
+        List<EndpointSummary> es = summaryService.computeEndpointSummaries(all);
+        List<TestcaseResult> tcs = tcResultStore.getAll();
+        runExport(() -> csvExport.exportAllZipWithTestcases(f, all, hs, es, tcs), f);
+    }
+
+    private void runExport(ExportTask task, File f) {
+        new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                task.run(); return null;
+            }
+            @Override protected void done() {
+                try {
+                    get();
+                    statusLabel.setText("Exported: " + f.getName());
+                    statusLabel.setForeground(ACCENT);
+                } catch (Exception ex) {
+                    statusLabel.setText("Export failed: " + ex.getCause().getMessage());
+                    statusLabel.setForeground(RED_FG);
+                    JOptionPane.showMessageDialog(SecurityHeadersTab.this,
+                            "Export failed:\n" + ex.getCause().getMessage(),
+                            "Export Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }.execute();
+    }
+
+    @FunctionalInterface
+    private interface ExportTask { void run() throws Exception; }
+
+    private File chooseSave(String defaultName, String desc, String ext) {
+        JFileChooser fc = new JFileChooser();
+        fc.setSelectedFile(new File(defaultName));
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(desc, ext));
+        if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File f = fc.getSelectedFile();
+            if (!f.getName().endsWith("." + ext)) {
+                f = new File(f.getAbsolutePath() + "." + ext);
+            }
+            return f;
+        }
+        return null;
+    }
+
+    // ─── Table styling ───────────────────────────────────────────────────────
+
+    private void styleTable(JTable table) {
+        table.setRowHeight(26);
+        table.setShowHorizontalLines(true);
+        table.setShowVerticalLines(false);
+        table.setGridColor(TBL_DIV);
+        table.setBackground(TBL_EVEN);
+        table.setForeground(TXT);
+        table.setSelectionBackground(TBL_SEL);
+        table.setSelectionForeground(TXT);
+        table.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        table.setFillsViewportHeight(true);
+        table.setIntercellSpacing(new Dimension(0, 1));
+        table.setAutoCreateRowSorter(true);
+
+        JTableHeader hdr = table.getTableHeader();
+        hdr.setDefaultRenderer(new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int col) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, col);
+                l.setBackground(TBL_HDR); l.setForeground(TXT2);
+                l.setFont(new Font("SansSerif", Font.BOLD, 10));
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                l.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
+                        new EmptyBorder(6, 8, 6, 8)));
+                l.setOpaque(true);
+                return l;
+            }
+        });
+        hdr.setPreferredSize(new Dimension(0, 30));
+        hdr.setReorderingAllowed(false);
+
+        DefaultTableCellRenderer baseRend = new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int col) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, col);
+                if (!sel) {
+                    l.setBackground(row % 2 == 0 ? TBL_EVEN : TBL_ODD);
+                    l.setForeground(TXT);
+                }
+                l.setBorder(new EmptyBorder(0, 8, 0, 8));
+                return l;
+            }
+        };
+        for (int i = 0; i < table.getColumnCount(); i++) {
+            table.getColumnModel().getColumn(i).setCellRenderer(baseRend);
+        }
+    }
+
+    private void applyPresenceRenderer(JTable table, int from, int to) {
+        DefaultTableCellRenderer r = new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int col) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, col);
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                l.setOpaque(true);
+                l.setFont(new Font("SansSerif", Font.BOLD, 10));
+                l.setBorder(new EmptyBorder(4, 4, 4, 4));
+                if (!sel && val instanceof String txt) {
+                    if ("PRESENT".equals(txt)) { l.setBackground(GREEN_BG); l.setForeground(GREEN_FG); }
+                    else if ("MISSING".equals(txt)) { l.setBackground(RED_BG); l.setForeground(RED_FG); }
+                    else if ("COVERED".equals(txt)) { l.setBackground(WARN_BG); l.setForeground(WARN_FG); }
+                    else { l.setBackground(row % 2 == 0 ? TBL_EVEN : TBL_ODD); l.setForeground(TXT); }
+                } else if (sel) { l.setBackground(TBL_SEL); l.setForeground(TXT); }
+                return l;
+            }
+        };
+        for (int i = from; i <= to; i++) {
+            table.getColumnModel().getColumn(i).setCellRenderer(r);
+        }
+    }
+
+    private void applyCountRenderer(JTable table, int from, int to) {
+        DefaultTableCellRenderer r = new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int col) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, col);
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                l.setOpaque(true);
+                l.setFont(new Font("SansSerif", Font.BOLD, 11));
+                l.setBorder(new EmptyBorder(4, 4, 4, 4));
+                if (!sel && val instanceof Integer n) {
+                    l.setBackground(n > 0 ? RED_BG : GREEN_BG);
+                    l.setForeground(n > 0 ? RED_FG : GREEN_FG);
+                } else if (sel) { l.setBackground(TBL_SEL); l.setForeground(TXT); }
+                return l;
+            }
+        };
+        for (int i = from; i <= to; i++) {
+            table.getColumnModel().getColumn(i).setCellRenderer(r);
+        }
+    }
+
+    private void applyTestcaseHeaderRenderer(JTable table, int from, int to) {
+        DefaultTableCellRenderer r = new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int column) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, column);
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                l.setOpaque(true);
+                l.setFont(new Font("SansSerif", Font.BOLD, 10));
+                l.setBorder(new EmptyBorder(4, 4, 4, 4));
+                if (!sel && val instanceof String s) {
+                    switch (s) {
+                        case "PASS" -> { l.setBackground(GREEN_BG); l.setForeground(GREEN_FG); }
+                        case "FAIL" -> { l.setBackground(RED_BG); l.setForeground(RED_FG); }
+                        case "COVERED", "ERROR", "INCONCLUSIVE" -> { l.setBackground(WARN_BG); l.setForeground(WARN_FG); }
+                        default -> { l.setBackground(row % 2 == 0 ? TBL_EVEN : TBL_ODD); l.setForeground(TXT_M); }
+                    }
+                } else if (sel) { l.setBackground(TBL_SEL); l.setForeground(TXT); }
+                return l;
+            }
+        };
+        for (int i = from; i <= to; i++) {
+            table.getColumnModel().getColumn(i).setCellRenderer(r);
+        }
+    }
+
+    // ─── Scope cards ─────────────────────────────────────────────────────────
+
+
+    // ─── Status bar ──────────────────────────────────────────────────────────
+
+    private JPanel createStatusBar() {
+        JPanel bar = new JPanel(new BorderLayout());
+        bar.setBackground(BG2);
+        bar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER),
+                new EmptyBorder(5, 14, 5, 14)));
+        statusLabel = new JLabel("Monitoring");
+        statusLabel.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        statusLabel.setForeground(ACCENT);
+        JLabel ver = new JLabel("v4.1.0");
+        ver.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        ver.setForeground(TXT_M);
+        bar.add(statusLabel, BorderLayout.WEST);
+        bar.add(ver, BorderLayout.EAST);
+        return bar;
+    }
+
+    // ─── Widget helpers ──────────────────────────────────────────────────────
+
+    private JLabel label(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        l.setForeground(TXT_M);
+        return l;
+    }
+
+    private JLabel sectionLabel(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(new Font("SansSerif", Font.BOLD, 11));
+        l.setForeground(TXT_M);
+        l.setBorder(new EmptyBorder(0, 2, 6, 0));
+        return l;
+    }
+
+    private JTextField darkField(int cols) {
+        JTextField f = new JTextField(cols);
+        f.setBackground(BG_INPUT); f.setForeground(TXT);
+        f.setCaretColor(ACCENT);
+        f.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_S),
+                new EmptyBorder(4, 8, 4, 8)));
+        f.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        return f;
+    }
+
+    private JComboBox<String> darkCombo(String[] items) {
+        JComboBox<String> c = new JComboBox<>(items);
+        c.setBackground(BG_INPUT); c.setForeground(TXT);
+        c.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        c.setBorder(BorderFactory.createLineBorder(BORDER_S));
+        return c;
+    }
+
+    private JButton pill(String text, Color bg, Color hover) {
+        JButton b = new JButton(text) {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 4, 4);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        b.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        b.setForeground(Color.WHITE); b.setBackground(bg);
+        b.putClientProperty("pill.restBg", bg);
+        b.putClientProperty("pill.hoverBg", hover);
+        b.setFocusPainted(false); b.setBorderPainted(false);
+        b.setContentAreaFilled(false); b.setOpaque(false);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setBorder(new EmptyBorder(5, 12, 5, 12));
+        b.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) {
+                b.setBackground((Color) b.getClientProperty("pill.hoverBg"));
+            }
+            @Override public void mouseExited(MouseEvent e) {
+                b.setBackground((Color) b.getClientProperty("pill.restBg"));
+            }
+        });
+        return b;
+    }
+
+    // ─── Dark scrollbar ──────────────────────────────────────────────────────
+
+    private static class DarkScrollBarUI extends javax.swing.plaf.basic.BasicScrollBarUI {
+        @Override protected void configureScrollBarColors() {
+            thumbColor = new Color(62, 68, 82); trackColor = BG;
+        }
+        @Override protected JButton createDecreaseButton(int o) { return zeroBtn(); }
+        @Override protected JButton createIncreaseButton(int o) { return zeroBtn(); }
+        private JButton zeroBtn() { JButton b = new JButton(); b.setPreferredSize(new Dimension(0, 0)); return b; }
+        @Override protected void paintThumb(Graphics g, JComponent c, Rectangle r) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(thumbColor); g2.fillRoundRect(r.x + 2, r.y + 2, r.width - 4, r.height - 4, 6, 6);
+            g2.dispose();
+        }
+        @Override protected void paintTrack(Graphics g, JComponent c, Rectangle r) {
+            g.setColor(trackColor); g.fillRect(r.x, r.y, r.width, r.height);
+        }
+    }
+}
