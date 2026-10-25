@@ -78,7 +78,7 @@ public class SecurityHeadersTab extends JPanel {
     private final int[] dashCovTotal = new int[6];
 
     // Dashboard security posture
-    private JLabel dashAffected, dashCompliant, dashCompliance;
+    private JLabel dashAffected, dashCompliant, dashCompliance, dashNoHeaders;
 
     // Dashboard scan health labels
     private JLabel dashProcessed, dashChecksMin, dashHeap, dashElapsed, dashLastUpdate, dashTcErrors;
@@ -118,6 +118,7 @@ public class SecurityHeadersTab extends JPanel {
     private JTextField catalogSearchField;
 
     private JLabel statusLabel;
+    private JLabel monitorLabel;
 
     // Summary card labels
     private JLabel cardResponses, cardWithMissing, cardHosts, cardMissingOccur;
@@ -161,7 +162,27 @@ public class SecurityHeadersTab extends JPanel {
         JPanel mainBody = new JPanel(new BorderLayout());
         mainBody.setBackground(BG);
 
-        mainBody.add(createTabbedContent(), BorderLayout.CENTER);
+        monitorLabel = new JLabel("● Monitoring");
+        monitorLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
+        monitorLabel.setForeground(GREEN_FG);
+        monitorLabel.setOpaque(false);
+
+        JTabbedPane tabs = createTabbedContent();
+        JPanel tabOverlay = new JPanel(null) {
+            @Override public void doLayout() {
+                tabs.setBounds(0, 0, getWidth(), getHeight());
+                Dimension pref = monitorLabel.getPreferredSize();
+                java.awt.Rectangle tabBounds = tabs.getUI().getTabBounds(tabs, 0);
+                int y = (tabBounds != null) ? (tabBounds.height - pref.height) / 2 : 4;
+                monitorLabel.setBounds(getWidth() - pref.width - 14, y, pref.width, pref.height);
+            }
+            @Override public Dimension getPreferredSize() { return tabs.getPreferredSize(); }
+            @Override public Dimension getMinimumSize() { return tabs.getMinimumSize(); }
+        };
+        tabOverlay.setBackground(BG);
+        tabOverlay.add(monitorLabel);
+        tabOverlay.add(tabs);
+        mainBody.add(tabOverlay, BorderLayout.CENTER);
 
         add(mainBody, BorderLayout.CENTER);
         add(createStatusBar(), BorderLayout.SOUTH);
@@ -226,6 +247,8 @@ public class SecurityHeadersTab extends JPanel {
             enableBtn.setForeground(on ? HI : TXT_M);
             statusLabel.setText(on ? "Monitoring" : "Paused");
             statusLabel.setForeground(on ? ACCENT : TXT_M);
+            monitorLabel.setText(on ? "● Monitoring" : "■ Stopped");
+            monitorLabel.setForeground(on ? GREEN_FG : RED_FG);
         });
 
         JButton passiveBtn = pill("Passive Scan", ACCENT_DIM, ACCENT);
@@ -418,7 +441,7 @@ public class SecurityHeadersTab extends JPanel {
         dash.add(dashSectionLabel("SECURITY POSTURE"));
         dash.add(Box.createVerticalStrut(6));
 
-        JPanel postureRow = new JPanel(new GridLayout(1, 3, 8, 0));
+        JPanel postureRow = new JPanel(new GridLayout(1, 4, 8, 0));
         postureRow.setOpaque(false);
         postureRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         postureRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
@@ -426,6 +449,7 @@ public class SecurityHeadersTab extends JPanel {
         dashAffected = new JLabel("0");
         dashCompliant = new JLabel("0");
         dashCompliance = new JLabel("—");
+        dashNoHeaders = new JLabel("0");
 
         JPanel affectedCard = summaryCard("Affected Endpoints", dashAffected, RED_FG);
         affectedCard.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -451,9 +475,21 @@ public class SecurityHeadersTab extends JPanel {
 
         JPanel complianceCard = summaryCard("Header Compliance", dashCompliance, ACCENT);
 
+        JPanel noHeadersCard = summaryCard("No Security Headers", dashNoHeaders, ORANGE_FG);
+        noHeadersCard.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        noHeadersCard.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                if (mainTabs != null) {
+                    mainTabs.setSelectedIndex(1);
+                    rawHeaderCombo.setSelectedIndex(2);
+                }
+            }
+        });
+
         postureRow.add(affectedCard);
         postureRow.add(compliantCard);
         postureRow.add(complianceCard);
+        postureRow.add(noHeadersCard);
         dash.add(postureRow);
         dash.add(Box.createVerticalStrut(24));
 
@@ -653,8 +689,24 @@ public class SecurityHeadersTab extends JPanel {
             if (hasMissing) affectedEps++;
             else compliantEps++;
         }
+        int noHeaderEps = 0;
+        Map<String, Boolean> endpointAllMissing = new HashMap<>();
+        for (HeaderResult r : all) {
+            String key = r.endpointKey();
+            boolean allMissing = r.missingCount() == 6;
+            Boolean prev = endpointAllMissing.get(key);
+            if (prev == null) {
+                endpointAllMissing.put(key, allMissing);
+            } else if (!allMissing) {
+                endpointAllMissing.put(key, false);
+            }
+        }
+        for (boolean allMissing : endpointAllMissing.values()) {
+            if (allMissing) noHeaderEps++;
+        }
         dashAffected.setText(String.valueOf(affectedEps));
         dashCompliant.setText(String.valueOf(compliantEps));
+        dashNoHeaders.setText(String.valueOf(noHeaderEps));
         dashCompliance.setText(totalChecks > 0
                 ? String.format("%.1f%%", passedChecks * 100.0 / totalChecks)
                 : "—");
@@ -716,7 +768,8 @@ public class SecurityHeadersTab extends JPanel {
         // Table
         JTable table = new JTable(rawTableModel);
         styleTable(table);
-        applyPresenceRenderer(table, 4, 8);
+        applyPresenceRenderer(table, 4, 7);
+        applyAcaoPresenceRenderer(table, 8);
         applyPresenceRenderer(table, 10, 10);
         applyCenterRenderer(table, 1);
         applyCenterRenderer(table, 3);
@@ -901,7 +954,7 @@ public class SecurityHeadersTab extends JPanel {
         bar.add(label("Search")); bar.add(hostSearchField);
 
         hostHeaderCombo = darkCombo(new String[]{
-                "None", "Any Missing", "All Missing", "HSTS Missing", "Cache-Control Missing",
+                "None", "All Missing", "HSTS Missing", "Cache-Control Missing",
                 "XFO Missing", "XCTO Missing", "ACAO Missing", "CSP Missing"});
         hostHeaderCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyHostFilters(); });
         bar.add(label("Header")); bar.add(hostHeaderCombo);
@@ -1426,7 +1479,8 @@ public class SecurityHeadersTab extends JPanel {
         // Table
         JTable table = new JTable(repeaterTableModel);
         styleTable(table);
-        applyPresenceRenderer(table, 4, 8);
+        applyPresenceRenderer(table, 4, 7);
+        applyAcaoPresenceRenderer(table, 8);
         applyPresenceRenderer(table, 10, 10);
         applyCenterRenderer(table, 1);
         applyCenterRenderer(table, 3);
@@ -2298,16 +2352,15 @@ public class SecurityHeadersTab extends JPanel {
         List<HostSummary> filtered = all.stream().filter(h -> {
             if (!search.isEmpty() && !h.host().toLowerCase().contains(search)) return false;
             return switch (headerIdx) {
-                case 1 -> h.responsesWithMissing() > 0;
-                case 2 -> h.hstsMissing() > 0 && h.cacheControlMissing() > 0
+                case 1 -> h.hstsMissing() > 0 && h.cacheControlMissing() > 0
                         && h.xfoMissing() > 0 && h.xctoMissing() > 0
                         && h.acaoMissing() > 0 && h.cspMissing() > 0;
-                case 3 -> h.hstsMissing() > 0;
-                case 4 -> h.cacheControlMissing() > 0;
-                case 5 -> h.xfoMissing() > 0;
-                case 6 -> h.xctoMissing() > 0;
-                case 7 -> h.acaoMissing() > 0;
-                case 8 -> h.cspMissing() > 0;
+                case 2 -> h.hstsMissing() > 0;
+                case 3 -> h.cacheControlMissing() > 0;
+                case 4 -> h.xfoMissing() > 0;
+                case 5 -> h.xctoMissing() > 0;
+                case 6 -> h.acaoMissing() > 0;
+                case 7 -> h.cspMissing() > 0;
                 default -> true;
             };
         }).collect(Collectors.toList());
@@ -2343,7 +2396,7 @@ public class SecurityHeadersTab extends JPanel {
             };
         }).collect(Collectors.toList());
 
-        epTableModel.setTestcaseCounts(tcResultStore.getAll(), library.size());
+        epTableModel.setTestcaseCounts(tcResultStore.getAll(), library.size(), library);
         epTableModel.setData(filtered);
         boolean active = !search.isEmpty() || hostFilter != null || headerIdx > 0;
         epFilterIndicator.setText(active ? "Filtered" : "");
@@ -2536,6 +2589,27 @@ public class SecurityHeadersTab extends JPanel {
         }
     }
 
+    private void applyAcaoPresenceRenderer(JTable table, int col) {
+        DefaultTableCellRenderer r = new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int column) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, column);
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                l.setOpaque(true);
+                l.setFont(new Font("SansSerif", Font.BOLD, 12));
+                l.setBorder(new EmptyBorder(4, 4, 4, 4));
+                if (!sel && val instanceof String txt) {
+                    if ("PRESENT".equals(txt)) { l.setBackground(GREEN_BG); l.setForeground(GREEN_FG); }
+                    else if ("MISSING".equals(txt)) { l.setBackground(ORANGE_BG); l.setForeground(ORANGE_FG); }
+                    else if ("COVERED".equals(txt)) { l.setBackground(WARN_BG); l.setForeground(WARN_FG); }
+                    else { l.setBackground(row % 2 == 0 ? TBL_EVEN : TBL_ODD); l.setForeground(TXT); }
+                } else if (sel) { l.setBackground(TBL_SEL); l.setForeground(TXT); }
+                return l;
+            }
+        };
+        table.getColumnModel().getColumn(col).setCellRenderer(r);
+    }
+
     private void applyCountRenderer(JTable table, int from, int to) {
         DefaultTableCellRenderer r = new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable t, Object val,
@@ -2655,11 +2729,7 @@ public class SecurityHeadersTab extends JPanel {
         statusLabel = new JLabel("Monitoring");
         statusLabel.setFont(new Font("SansSerif", Font.PLAIN, 12));
         statusLabel.setForeground(ACCENT);
-        JLabel ver = new JLabel("v4.1.0");
-        ver.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        ver.setForeground(TXT_M);
         bar.add(statusLabel, BorderLayout.WEST);
-        bar.add(ver, BorderLayout.EAST);
         return bar;
     }
 

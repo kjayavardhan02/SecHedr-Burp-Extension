@@ -470,7 +470,10 @@ public class PassiveEngine {
 
     private TestcaseDefinition lookup(String id) {
         if (!isSelected(id)) return null;
-        return library.get(id);
+        TestcaseDefinition tc = library.get(id);
+        if (tc == null) return null;
+        if (tc.mode() != ExecutionMode.PASSIVE) return null;
+        return tc;
     }
 
     private void evalTc(String id, ObservedResponse obs, List<TestcaseResult> results) {

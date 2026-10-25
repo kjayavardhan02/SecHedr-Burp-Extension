@@ -9,7 +9,7 @@ public class HostSummaryTableModel extends AbstractTableModel {
     private static final String[] COLUMNS = {
         "Host", "Unique Endpoints",
         "HSTS Missing", "CC Missing", "XFO Missing",
-        "XCTO Missing", "ACAO Missing", "CSP Missing", "ACAO Fail"
+        "XCTO Missing", "ACAO Missing", "ACAO Checks", "CSP Missing"
     };
 
     private List<HostSummary> data = new ArrayList<>();
@@ -39,8 +39,8 @@ public class HostSummaryTableModel extends AbstractTableModel {
             case 4 -> h.xfoMissing();
             case 5 -> h.xctoMissing();
             case 6 -> h.acaoMissing();
-            case 7 -> h.cspMissing();
-            case 8 -> h.acaoFail();
+            case 7 -> h.acaoFail();
+            case 8 -> h.cspMissing();
             default -> "";
         };
     }

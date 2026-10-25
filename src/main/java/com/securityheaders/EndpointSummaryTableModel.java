@@ -1,6 +1,9 @@
 package com.securityheaders;
 
 import com.securityheaders.testcase.ExecutionMode;
+import com.securityheaders.testcase.ResultStatus;
+import com.securityheaders.testcase.TestcaseDefinition;
+import com.securityheaders.testcase.TestcaseLibrary;
 import com.securityheaders.testcase.TestcaseResult;
 
 import javax.swing.table.AbstractTableModel;
@@ -19,6 +22,7 @@ public class EndpointSummaryTableModel extends AbstractTableModel {
 
     private List<EndpointSummary> data = new ArrayList<>();
     private Map<String, int[]> tcCounts = new HashMap<>();
+    private int totalTc = 0;
 
     @Override
     public int getRowCount() { return data.size(); }
@@ -41,7 +45,7 @@ public class EndpointSummaryTableModel extends AbstractTableModel {
     public Object getValueAt(int row, int col) {
         EndpointSummary ep = data.get(row);
         String key = ep.host() + ":" + ep.port() + ":" + ep.method() + ":" + ep.pathAndQuery();
-        int[] counts = tcCounts.getOrDefault(key, new int[]{0, 0, 0});
+        int[] counts = tcCounts.getOrDefault(key, new int[]{0, 0, totalTc});
         return switch (col) {
             case 0 -> ep.host();
             case 1 -> ep.method();
@@ -66,27 +70,28 @@ public class EndpointSummaryTableModel extends AbstractTableModel {
         fireTableDataChanged();
     }
 
-    public void setTestcaseCounts(List<TestcaseResult> results, int totalTestcases) {
+    public void setTestcaseCounts(List<TestcaseResult> results, int totalTestcases,
+                                   TestcaseLibrary library) {
+        this.totalTc = totalTestcases;
         tcCounts.clear();
-        Map<String, Set<String>> passiveIds = new HashMap<>();
-        Map<String, Set<String>> activeIds = new HashMap<>();
+        Map<String, Set<String>> passiveOnlyIds = new HashMap<>();
+        Map<String, Set<String>> activeOrBothIds = new HashMap<>();
         Map<String, Set<String>> allIds = new HashMap<>();
         for (TestcaseResult r : results) {
+            if (r.status() == ResultStatus.NOT_TESTED || r.status() == ResultStatus.UNSUPPORTED) continue;
             String key = r.endpointKey();
             String tcId = r.testcaseId();
             allIds.computeIfAbsent(key, k -> new HashSet<>()).add(tcId);
-            if (r.mode() == ExecutionMode.PASSIVE) {
-                passiveIds.computeIfAbsent(key, k -> new HashSet<>()).add(tcId);
-            } else if (r.mode() == ExecutionMode.ACTIVE) {
-                activeIds.computeIfAbsent(key, k -> new HashSet<>()).add(tcId);
+            TestcaseDefinition def = library.get(tcId);
+            if (def != null && def.mode() == ExecutionMode.PASSIVE) {
+                passiveOnlyIds.computeIfAbsent(key, k -> new HashSet<>()).add(tcId);
             } else {
-                passiveIds.computeIfAbsent(key, k -> new HashSet<>()).add(tcId);
-                activeIds.computeIfAbsent(key, k -> new HashSet<>()).add(tcId);
+                activeOrBothIds.computeIfAbsent(key, k -> new HashSet<>()).add(tcId);
             }
         }
         for (String key : allIds.keySet()) {
-            int passive = passiveIds.containsKey(key) ? passiveIds.get(key).size() : 0;
-            int active = activeIds.containsKey(key) ? activeIds.get(key).size() : 0;
+            int passive = passiveOnlyIds.getOrDefault(key, Set.of()).size();
+            int active = activeOrBothIds.getOrDefault(key, Set.of()).size();
             int unique = allIds.get(key).size();
             tcCounts.put(key, new int[]{passive, active, Math.max(0, totalTestcases - unique)});
         }

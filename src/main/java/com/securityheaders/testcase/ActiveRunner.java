@@ -173,12 +173,7 @@ public class ActiveRunner {
         // 405 — wrong method
         batch.add(sendAndCheck("TC-STATUS-405", buildReq(host, port, isHttps, "PATCH", pathAndQuery, base), ek, host));
 
-        // Other status codes that need specific conditions: record as-observed or NOT_TESTED
-        for (int code : new int[]{201, 202, 204, 206, 301, 302, 304, 307, 308,
-                400, 401, 403, 408, 409, 413, 415, 422, 429, 431, 451, 500, 502, 503, 504}) {
-            addNotTested("TC-STATUS-" + code, ek, host, pathAndQuery, batch,
-                    "Status " + code + " requires specific endpoint conditions");
-        }
+        // Status codes 201-504 (except 404/405) are passive-only — no active probes needed
     }
 
     // --- Redirect Chain ---

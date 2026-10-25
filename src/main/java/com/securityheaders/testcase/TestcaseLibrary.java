@@ -71,8 +71,14 @@ public class TestcaseLibrary {
                 "Status Code", "Response with HTTP status 200");
         for (int code : new int[]{201, 202, 204, 206,
                 301, 302, 304, 307, 308,
-                400, 401, 403, 404, 405, 408, 409, 413, 415, 422, 429, 431, 451,
+                400, 401, 403, 408, 409, 413, 415, 422, 429, 431, 451,
                 500, 502, 503, 504}) {
+            addPassiveOnly("TC-STATUS-" + code,
+                    "Security headers with HTTP " + code,
+                    "Security headers on HTTP " + code + " response",
+                    "Status Code", "Response with HTTP status " + code);
+        }
+        for (int code : new int[]{404, 405}) {
             addBoth("TC-STATUS-" + code,
                     "Security headers with HTTP " + code,
                     "Security headers on HTTP " + code + " response",
