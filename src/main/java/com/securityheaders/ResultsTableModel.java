@@ -8,7 +8,7 @@ public class ResultsTableModel extends AbstractTableModel {
 
     private static final String[] COLUMN_NAMES = {
         "Host", "Method", "URL (Path)", "Status Code",
-        "HSTS", "Cache-Control", "XFO", "XCTO", "ACAO", "CSP"
+        "HSTS", "Cache-Control", "XFO", "XCTO", "ACAO", "ACAO Checks", "CSP"
     };
 
     private List<HeaderResult> results = new ArrayList<>();
@@ -41,7 +41,11 @@ public class ResultsTableModel extends AbstractTableModel {
             case 6 -> r.xfoCoveredByCsp() ? "COVERED" : presenceText(r.xfoPresent());
             case 7 -> presenceText(r.xctoPresent());
             case 8 -> presenceText(r.acaoPresent());
-            case 9 -> presenceText(r.cspPresent());
+            case 9 -> {
+                if (!r.acaoPresent()) yield "—";
+                yield r.acaoCheckFailed() ? "FAIL" : "PASS";
+            }
+            case 10 -> presenceText(r.cspPresent());
             default -> "";
         };
     }

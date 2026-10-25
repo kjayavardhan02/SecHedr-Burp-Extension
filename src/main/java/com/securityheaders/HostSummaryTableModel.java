@@ -7,9 +7,9 @@ import java.util.List;
 public class HostSummaryTableModel extends AbstractTableModel {
 
     private static final String[] COLUMNS = {
-        "Host", "Responses", "Unique Endpoints", "With Missing",
+        "Host", "Unique Endpoints",
         "HSTS Missing", "CC Missing", "XFO Missing",
-        "XCTO Missing", "ACAO Missing", "CSP Missing"
+        "XCTO Missing", "ACAO Missing", "CSP Missing", "ACAO Fail"
     };
 
     private List<HostSummary> data = new ArrayList<>();
@@ -33,15 +33,14 @@ public class HostSummaryTableModel extends AbstractTableModel {
         HostSummary h = data.get(row);
         return switch (col) {
             case 0 -> h.host();
-            case 1 -> h.responses();
-            case 2 -> h.uniqueEndpoints();
-            case 3 -> h.responsesWithMissing();
-            case 4 -> h.hstsMissing();
-            case 5 -> h.cacheControlMissing();
-            case 6 -> h.xfoMissing();
-            case 7 -> h.xctoMissing();
-            case 8 -> h.acaoMissing();
-            case 9 -> h.cspMissing();
+            case 1 -> h.uniqueEndpoints();
+            case 2 -> h.hstsMissing();
+            case 3 -> h.cacheControlMissing();
+            case 4 -> h.xfoMissing();
+            case 5 -> h.xctoMissing();
+            case 6 -> h.acaoMissing();
+            case 7 -> h.cspMissing();
+            case 8 -> h.acaoFail();
             default -> "";
         };
     }

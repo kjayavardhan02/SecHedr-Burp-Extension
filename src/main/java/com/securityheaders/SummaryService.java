@@ -34,7 +34,7 @@ public class SummaryService {
                     .map(HeaderResult::endpointKey)
                     .collect(Collectors.toSet());
             int withMissing = 0;
-            int hsts = 0, cc = 0, xfo = 0, xcto = 0, acao = 0, csp = 0;
+            int hsts = 0, cc = 0, xfo = 0, xcto = 0, acao = 0, csp = 0, acaoFail = 0;
             for (HeaderResult r : group) {
                 if (r.hasAnyMissing()) withMissing++;
                 if (!r.hstsPresent()) hsts++;
@@ -43,9 +43,10 @@ public class SummaryService {
                 if (!r.xctoPresent()) xcto++;
                 if (!r.acaoPresent()) acao++;
                 if (!r.cspPresent()) csp++;
+                if (r.acaoCheckFailed()) acaoFail++;
             }
             summaries.add(new HostSummary(host, responses, endpoints.size(),
-                    withMissing, hsts, cc, xfo, xcto, acao, csp));
+                    withMissing, hsts, cc, xfo, xcto, acao, csp, acaoFail));
         }
         return summaries;
     }

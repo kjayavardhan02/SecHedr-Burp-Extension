@@ -143,18 +143,10 @@ public class ActiveRunner {
 
     private void runContentTypeProbes(String host, int port, boolean isHttps, String pathAndQuery,
                                        HttpRequest base, String ek, List<TestcaseResult> batch) {
-        // TC-HDR-001: HTML — just request the path (likely HTML)
-        batch.add(sendAndCheck("TC-HDR-001", buildReq(host, port, isHttps, "GET", pathAndQuery, base), ek, host));
-
-        // TC-HDR-002: JSON/API
+        // TC-HDR-002: JSON/API — modifies Accept header
         HttpRequest jsonReq = replaceHeader(buildReq(host, port, isHttps, "GET", pathAndQuery, base),
                 "Accept", "application/json");
         batch.add(sendAndCheck("TC-HDR-002", jsonReq, ek, host));
-
-        // TC-HDR-003 to TC-HDR-006 and TC-HDR-007: content-type dependent, just run baseline on same path
-        for (String id : List.of("TC-HDR-003", "TC-HDR-004", "TC-HDR-005", "TC-HDR-006", "TC-HDR-007")) {
-            batch.add(sendAndCheck(id, buildReq(host, port, isHttps, "GET", pathAndQuery, base), ek, host));
-        }
 
         // TC-HDR-008: Auth endpoint — probe first reachable auth path
         batch.add(sendFirstReachable("TC-HDR-008", host, port, isHttps, base, ek,
@@ -175,9 +167,6 @@ public class ActiveRunner {
 
     private void runStatusCodeProbes(String host, int port, boolean isHttps, String pathAndQuery,
                                       HttpRequest base, String ek, List<TestcaseResult> batch) {
-        // 200 — normal request
-        batch.add(sendAndCheck("TC-STATUS-200", buildReq(host, port, isHttps, "GET", pathAndQuery, base), ek, host));
-
         // 404 — non-existent path
         batch.add(sendAndCheck("TC-STATUS-404", buildReq(host, port, isHttps, "GET", "/nonexistent-shtest-404", base), ek, host));
 

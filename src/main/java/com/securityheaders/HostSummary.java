@@ -12,11 +12,13 @@ public final class HostSummary {
     private final int xctoMissing;
     private final int acaoMissing;
     private final int cspMissing;
+    private final int acaoFail;
 
     public HostSummary(String host, int responses, int uniqueEndpoints,
                        int responsesWithMissing, int hstsMissing,
                        int cacheControlMissing, int xfoMissing,
-                       int xctoMissing, int acaoMissing, int cspMissing) {
+                       int xctoMissing, int acaoMissing, int cspMissing,
+                       int acaoFail) {
         this.host = host;
         this.responses = responses;
         this.uniqueEndpoints = uniqueEndpoints;
@@ -27,6 +29,7 @@ public final class HostSummary {
         this.xctoMissing = xctoMissing;
         this.acaoMissing = acaoMissing;
         this.cspMissing = cspMissing;
+        this.acaoFail = acaoFail;
     }
 
     public String host() { return host; }
@@ -39,4 +42,5 @@ public final class HostSummary {
     public int xctoMissing() { return xctoMissing; }
     public int acaoMissing() { return acaoMissing; }
     public int cspMissing() { return cspMissing; }
+    public int acaoFail() { return acaoFail; }
 }

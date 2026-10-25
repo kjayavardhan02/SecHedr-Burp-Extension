@@ -13,7 +13,7 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
 
     private static final String[] COLUMNS = {
         "Testcase", "Description", "Host", "Path", "Status Code", "Mode",
-        "HSTS", "Cache-Control", "XFO", "XCTO", "ACAO", "CSP"
+        "HSTS", "Cache-Control", "XFO", "XCTO", "ACAO", "ACAO Checks", "CSP"
     };
 
     private static final String[] HEADER_KEYS = {
@@ -63,7 +63,8 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
             case 8 -> deriveHeaderStatus(r, 2);
             case 9 -> deriveHeaderStatus(r, 3);
             case 10 -> deriveHeaderStatus(r, 4);
-            case 11 -> deriveHeaderStatus(r, 5);
+            case 11 -> deriveAcaoChecks(r);
+            case 12 -> deriveHeaderStatus(r, 5);
             default -> "";
         };
     }
@@ -72,6 +73,15 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
         String tcId = r.testcaseId();
         String status = r.status().name();
         String actual = r.actual();
+
+        // For ACAO column, show PRESENT/MISSING based on header presence
+        // Only when the testcase was actually executed (PASS or FAIL)
+        if (headerIdx == 4
+                && (r.status() == com.securityheaders.testcase.ResultStatus.PASS
+                    || r.status() == com.securityheaders.testcase.ResultStatus.FAIL)) {
+            String acaoPresence = deriveAcaoPresence(r);
+            if (acaoPresence != null) return acaoPresence;
+        }
 
         // CORS-specific testcases → only show in ACAO column (index 4)
         if (tcId.startsWith("TC-CORS-")) {
@@ -89,6 +99,108 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
         // Parse the actual field to determine per-header status
         if (actual == null || actual.isEmpty()) return "—";
         return deriveFromActual(actual, headerIdx, status);
+    }
+
+    private String deriveAcaoPresence(TestcaseResult r) {
+        String resp = r.responseData();
+        if (resp == null || resp.isEmpty()) return null;
+
+        String headersPart = resp.contains("\r\n\r\n")
+                ? resp.substring(0, resp.indexOf("\r\n\r\n"))
+                : (resp.contains("\n\n") ? resp.substring(0, resp.indexOf("\n\n")) : resp);
+
+        for (String line : headersPart.split("\\r?\\n")) {
+            if (line.toLowerCase(Locale.ROOT).startsWith("access-control-allow-origin:")) {
+                return "PRESENT";
+            }
+        }
+        return "MISSING";
+    }
+
+    private String deriveAcaoChecks(TestcaseResult r) {
+        if (r.status() != com.securityheaders.testcase.ResultStatus.PASS
+                && r.status() != com.securityheaders.testcase.ResultStatus.FAIL) return "—";
+        String resp = r.responseData();
+        if (resp == null || resp.isEmpty()) return "—";
+
+        String headersPart = resp.contains("\r\n\r\n")
+                ? resp.substring(0, resp.indexOf("\r\n\r\n"))
+                : (resp.contains("\n\n") ? resp.substring(0, resp.indexOf("\n\n")) : resp);
+
+        String acaoValue = null;
+        for (String line : headersPart.split("\\r?\\n")) {
+            if (line.toLowerCase(Locale.ROOT).startsWith("access-control-allow-origin:")) {
+                acaoValue = line.substring("access-control-allow-origin:".length()).trim();
+                break;
+            }
+        }
+
+        if (acaoValue == null) return "—";
+
+        if ("*".equals(acaoValue)) return "FAIL";
+        if ("null".equalsIgnoreCase(acaoValue)) return "FAIL";
+
+        String reqData = r.requestData();
+        if (reqData != null && !reqData.isEmpty()) {
+            String originValue = null;
+            String reqHeaders = reqData.contains("\r\n\r\n")
+                    ? reqData.substring(0, reqData.indexOf("\r\n\r\n"))
+                    : (reqData.contains("\n\n") ? reqData.substring(0, reqData.indexOf("\n\n")) : reqData);
+            for (String line : reqHeaders.split("\\r?\\n")) {
+                if (line.toLowerCase(Locale.ROOT).startsWith("origin:")) {
+                    originValue = line.substring("origin:".length()).trim();
+                    break;
+                }
+            }
+            if (originValue != null && !originValue.isEmpty()
+                    && acaoValue.equalsIgnoreCase(originValue)) {
+                return "FAIL";
+            }
+        }
+
+        return "PASS";
+    }
+
+    private String deriveAcaoFromResponse(TestcaseResult r) {
+        String resp = r.responseData();
+        if (resp == null || resp.isEmpty()) return null;
+
+        String headersPart = resp.contains("\r\n\r\n")
+                ? resp.substring(0, resp.indexOf("\r\n\r\n"))
+                : (resp.contains("\n\n") ? resp.substring(0, resp.indexOf("\n\n")) : resp);
+
+        String acaoValue = null;
+        for (String line : headersPart.split("\\r?\\n")) {
+            if (line.toLowerCase(Locale.ROOT).startsWith("access-control-allow-origin:")) {
+                acaoValue = line.substring("access-control-allow-origin:".length()).trim();
+                break;
+            }
+        }
+
+        if (acaoValue == null) return "MISSING";
+
+        if ("*".equals(acaoValue)) return "FAIL";
+        if ("null".equalsIgnoreCase(acaoValue)) return "FAIL";
+
+        String reqData = r.requestData();
+        if (reqData != null && !reqData.isEmpty()) {
+            String originValue = null;
+            String reqHeaders = reqData.contains("\r\n\r\n")
+                    ? reqData.substring(0, reqData.indexOf("\r\n\r\n"))
+                    : (reqData.contains("\n\n") ? reqData.substring(0, reqData.indexOf("\n\n")) : reqData);
+            for (String line : reqHeaders.split("\\r?\\n")) {
+                if (line.toLowerCase(Locale.ROOT).startsWith("origin:")) {
+                    originValue = line.substring("origin:".length()).trim();
+                    break;
+                }
+            }
+            if (originValue != null && !originValue.isEmpty()
+                    && acaoValue.equalsIgnoreCase(originValue)) {
+                return "FAIL";
+            }
+        }
+
+        return "PASS";
     }
 
     private String deriveFromActual(String actual, int headerIdx, String overallStatus) {

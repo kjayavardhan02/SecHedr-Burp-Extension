@@ -40,6 +40,7 @@ public class HeaderCheckHttpHandler implements HttpHandler {
     private final Set<String> seenProxyUrls = ConcurrentHashMap.newKeySet();
     private volatile ResultStore repeaterResultStore;
     private volatile Runnable onRepeaterResult;
+    private volatile ScanHealthTracker healthTracker;
 
     public HeaderCheckHttpHandler(ResultStore resultStore, ScopeManager scopeManager) {
         this.resultStore = resultStore;
@@ -65,6 +66,7 @@ public class HeaderCheckHttpHandler implements HttpHandler {
     public void setEndpointRegistry(EndpointRegistry registry) { this.endpointRegistry = registry; }
     public void setRepeaterResultStore(ResultStore store) { this.repeaterResultStore = store; }
     public void setOnRepeaterResult(Runnable callback) { this.onRepeaterResult = callback; }
+    public void setHealthTracker(ScanHealthTracker tracker) { this.healthTracker = tracker; }
     public void clearSeenUrls() { seenProxyUrls.clear(); }
 
     @Override
@@ -122,12 +124,21 @@ public class HeaderCheckHttpHandler implements HttpHandler {
         String rawReq = extractRawRequest(request);
         String rawResp = extractRawResponse(responseReceived);
 
+        String acaoValue = null;
+        for (var h : responseReceived.headers()) {
+            if (h.name().equalsIgnoreCase("access-control-allow-origin")) {
+                acaoValue = h.value();
+                break;
+            }
+        }
+        String requestOrigin = request.headerValue("Origin");
+
         if (toolType == ToolType.REPEATER) {
             HeaderResult result = new HeaderResult(
                     host, port, method, pathAndQuery, statusCode,
                     present[0], present[1], present[2], xfoCoveredByCsp,
                     present[3], present[4], present[5],
-                    rawReq, rawResp);
+                    rawReq, rawResp, acaoValue, requestOrigin);
 
             ResultStore rStore = repeaterResultStore;
             if (rStore != null) {
@@ -147,10 +158,11 @@ public class HeaderCheckHttpHandler implements HttpHandler {
                 host, port, method, pathAndQuery, statusCode,
                 present[0], present[1], present[2], xfoCoveredByCsp,
                 present[3], present[4], present[5],
-                rawReq, rawResp
+                rawReq, rawResp, acaoValue, requestOrigin
         );
 
         resultStore.add(result);
+        if (healthTracker != null) healthTracker.recordRequestProcessed();
 
         Runnable cb = onNewResult;
         if (cb != null) {
@@ -186,6 +198,15 @@ public class HeaderCheckHttpHandler implements HttpHandler {
                 List<TestcaseResult> passiveResults = passiveEngine.analyze(obs);
                 if (!passiveResults.isEmpty()) {
                     testcaseResultStore.addAll(passiveResults);
+                    if (healthTracker != null) {
+                        for (TestcaseResult tr : passiveResults) {
+                            if (tr.status() == ResultStatus.ERROR) {
+                                healthTracker.recordError(tr.testcaseId(), tr.endpointKey(), tr.errorDetails());
+                            } else {
+                                healthTracker.recordTestcaseCompleted();
+                            }
+                        }
+                    }
                     Runnable tcb = onTestcaseResult;
                     if (tcb != null) javax.swing.SwingUtilities.invokeLater(tcb);
                 }

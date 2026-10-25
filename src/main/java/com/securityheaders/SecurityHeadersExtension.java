@@ -28,16 +28,19 @@ public class SecurityHeadersExtension implements BurpExtension {
                 scopeManager, endpointRegistry, tcResultStore);
         activeRunner.setTestcaseSelector(selector);
 
+        ScanHealthTracker healthTracker = new ScanHealthTracker();
+
         HeaderCheckHttpHandler handler = new HeaderCheckHttpHandler(resultStore, scopeManager);
         handler.setPassiveEngine(passiveEngine);
         handler.setActiveRunner(activeRunner);
         handler.setTestcaseResultStore(tcResultStore);
         handler.setEndpointRegistry(endpointRegistry);
         handler.setRepeaterResultStore(repeaterResultStore);
+        handler.setHealthTracker(healthTracker);
 
         SecurityHeadersTab tab = new SecurityHeadersTab(resultStore, repeaterResultStore,
                 scopeManager, handler, library, tcResultStore, endpointRegistry,
-                baseline, activeRunner, selector);
+                baseline, activeRunner, selector, healthTracker);
         handler.setOnNewResult(tab::refreshViews);
         handler.setOnTestcaseResult(tab::refreshTestcaseViews);
         handler.setOnRepeaterResult(tab::refreshRepeaterViews);

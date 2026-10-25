@@ -37,6 +37,7 @@ public class ResultFilterService {
         return switch (hf) {
             case ALL -> true;
             case ANY_MISSING -> r.hasAnyMissing();
+            case ALL_MISSING -> r.missingCount() == 6;
             case HSTS_MISSING -> !r.hstsPresent();
             case CACHE_CONTROL_MISSING -> !r.cacheControlPresent();
             case XFO_MISSING -> !r.xfoPresent() && !r.xfoCoveredByCsp();

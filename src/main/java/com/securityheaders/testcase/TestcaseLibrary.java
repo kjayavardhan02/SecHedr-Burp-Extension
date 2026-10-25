@@ -41,19 +41,19 @@ public class TestcaseLibrary {
 
     private void loadBuiltIn() {
         // Section 1: Endpoint / Content Type (TC-HDR-001 to TC-HDR-011)
-        addBoth("TC-HDR-001", "HTML page response", "Security headers on HTML page response",
+        addPassiveOnly("TC-HDR-001", "HTML page response", "Security headers on HTML page response",
                 "Endpoint / Content Type", "HTML response (Content-Type: text/html)");
         addBoth("TC-HDR-002", "JSON/API endpoint response", "Security headers on JSON/API endpoint response",
                 "Endpoint / Content Type", "JSON/API response (Content-Type: application/json)");
-        addBoth("TC-HDR-003", "CSS stylesheet response", "Security headers on CSS stylesheet response",
+        addPassiveOnly("TC-HDR-003", "CSS stylesheet response", "Security headers on CSS stylesheet response",
                 "Endpoint / Content Type", "CSS response (Content-Type: text/css)");
-        addBoth("TC-HDR-004", "JavaScript file response", "Security headers on JavaScript file response",
+        addPassiveOnly("TC-HDR-004", "JavaScript file response", "Security headers on JavaScript file response",
                 "Endpoint / Content Type", "JavaScript response (Content-Type: application/javascript or text/javascript)");
-        addBoth("TC-HDR-005", "Image resource response", "Security headers on Image resource response",
+        addPassiveOnly("TC-HDR-005", "Image resource response", "Security headers on Image resource response",
                 "Endpoint / Content Type", "Image response (Content-Type: image/*)");
-        addBoth("TC-HDR-006", "Font resource response", "Security headers on Font resource response",
+        addPassiveOnly("TC-HDR-006", "Font resource response", "Security headers on Font resource response",
                 "Endpoint / Content Type", "Font response (Content-Type: font/* or application/font-*)");
-        addBoth("TC-HDR-007", "File download response", "Security headers on File download response",
+        addPassiveOnly("TC-HDR-007", "File download response", "Security headers on File download response",
                 "Endpoint / Content Type", "Response with Content-Disposition: attachment");
         addBoth("TC-HDR-008", "Authentication endpoint response", "Security headers on Authentication endpoint response",
                 "Endpoint / Content Type", "Authentication endpoint (login/logout/callback path)");
@@ -65,7 +65,11 @@ public class TestcaseLibrary {
                 "Endpoint / Content Type", "GraphQL endpoint (/graphql)");
 
         // Section 2: HTTP Status-Code Variations (TC-STATUS-*)
-        for (int code : new int[]{200, 201, 202, 204, 206,
+        addPassiveOnly("TC-STATUS-200",
+                "Security headers with HTTP 200",
+                "Security headers on HTTP 200 response",
+                "Status Code", "Response with HTTP status 200");
+        for (int code : new int[]{201, 202, 204, 206,
                 301, 302, 304, 307, 308,
                 400, 401, 403, 404, 405, 408, 409, 413, 415, 422, 429, 431, 451,
                 500, 502, 503, 504}) {
@@ -283,6 +287,12 @@ public class TestcaseLibrary {
     private void addBoth(String id, String name, String desc, String category, String preconditions) {
         testcases.put(id, new TestcaseDefinition(id, name, desc, category,
                 ExecutionMode.BOTH, SupportStatus.SUPPORTED,
+                preconditions, "", "", BASELINE_EXPECTED, "All", null));
+    }
+
+    private void addPassiveOnly(String id, String name, String desc, String category, String preconditions) {
+        testcases.put(id, new TestcaseDefinition(id, name, desc, category,
+                ExecutionMode.PASSIVE, SupportStatus.SUPPORTED,
                 preconditions, "", "", BASELINE_EXPECTED, "All", null));
     }
 

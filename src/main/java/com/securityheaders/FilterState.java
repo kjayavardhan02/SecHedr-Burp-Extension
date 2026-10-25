@@ -8,6 +8,7 @@ public final class FilterState {
     public enum HeaderFilter {
         ALL,
         ANY_MISSING,
+        ALL_MISSING,
         HSTS_MISSING,
         CACHE_CONTROL_MISSING,
         XFO_MISSING,
