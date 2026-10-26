@@ -167,13 +167,72 @@ public class ActiveRunner {
 
     private void runStatusCodeProbes(String host, int port, boolean isHttps, String pathAndQuery,
                                       HttpRequest base, String ek, List<TestcaseResult> batch) {
+        // 301 — HTTP→HTTPS redirect (only when original is HTTPS)
+        batch.add(runHttpToHttpsRedirect(host, pathAndQuery, isHttps, base, ek));
+
         // 404 — non-existent path
         batch.add(sendAndCheck("STATUS-404", buildReq(host, port, isHttps, "GET", "/nonexistent-shtest-404", base), ek, host));
 
         // 405 — wrong method
         batch.add(sendAndCheck("STATUS-405", buildReq(host, port, isHttps, "PATCH", pathAndQuery, base), ek, host));
+    }
 
-        // Status codes 201-504 (except 404/405) are passive-only — no active probes needed
+    private TestcaseResult runHttpToHttpsRedirect(String host, String pathAndQuery,
+                                                   boolean isHttps, HttpRequest base, String ek) {
+        if (!isSelected("STATUS-301")) return null;
+        TestcaseDefinition tc = library.get("STATUS-301");
+        if (tc == null) return null;
+
+        if (!isHttps) {
+            return makeNotTested(tc, ek, host, pathAndQuery, "Original request is already HTTP — skipped to avoid duplication");
+        }
+        if (!scopeManager.isInScope(host)) {
+            return makeNotTested(tc, ek, host, pathAndQuery, "Target host out of scope");
+        }
+
+        HttpRequest httpReq = addMarker(buildReq(host, 80, false, "GET", pathAndQuery, base));
+
+        try {
+            HttpRequestResponse rr = send(httpReq);
+            var resp = rr.response();
+            if (resp == null) {
+                return makeResult(tc, ek, host, pathAndQuery, 0, ResultStatus.ERROR,
+                        "No response from HTTP port 80", tc.expectedResult(), "", "Connection refused or timeout");
+            }
+
+            int status = resp.statusCode();
+            String path = httpReq.path() != null ? httpReq.path() : "/";
+            String location = resp.headerValue("Location");
+
+            List<String> missing = new ArrayList<>();
+            for (String h : BASELINE_HEADERS) {
+                if (resp.headerValue(h) == null) {
+                    if (h.equals("x-frame-options") && isXfoCoveredByCsp(resp)) continue;
+                    missing.add(h);
+                }
+            }
+
+            String redirectInfo = "HTTP " + status;
+            if (location != null) redirectInfo += " → " + location;
+
+            if (status == 301 || status == 302 || status == 307 || status == 308) {
+                if (missing.isEmpty()) {
+                    return makeResult(tc, ek, host, path, status, ResultStatus.PASS,
+                            "Redirect response has all security headers (" + redirectInfo + ")",
+                            tc.expectedResult(), "All present", redirectInfo);
+                }
+                return makeResult(tc, ek, host, path, status, ResultStatus.FAIL,
+                        "Missing on redirect: " + String.join(", ", missing) + " (" + redirectInfo + ")",
+                        tc.expectedResult(), "Missing: " + String.join(", ", missing), redirectInfo);
+            }
+
+            return makeResult(tc, ek, host, path, status, ResultStatus.INCONCLUSIVE,
+                    "Expected 301 redirect but got HTTP " + status,
+                    tc.expectedResult(), "HTTP " + status + " (no redirect)", redirectInfo);
+        } catch (Exception e) {
+            return makeResult(tc, ek, host, pathAndQuery, 0, ResultStatus.ERROR,
+                    "HTTP request failed: " + e.getMessage(), tc.expectedResult(), "", e.toString());
+        }
     }
 
     // --- Redirect Chain ---

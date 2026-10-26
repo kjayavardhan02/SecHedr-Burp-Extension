@@ -130,6 +130,7 @@ public class SecurityHeadersTab extends JPanel {
     private JComboBox<String> tcStatusCombo;
     private JComboBox<String> tcCategoryCombo;
     private JComboBox<String> tcHostCombo;
+    private JComboBox<String> tcStatusCodeCombo;
     private JTextField tcPathField;
 
     private List<HeaderResult> currentFiltered = new ArrayList<>();
@@ -1234,7 +1235,12 @@ public class SecurityHeadersTab extends JPanel {
         panel.setBorder(new EmptyBorder(6, 10, 6, 10));
 
         // Testcase filter bar
-        JPanel tcFilterBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        JPanel tcFilterBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4)) {
+            @Override
+            public Dimension getPreferredSize() {
+                return wrapPreferredSize(this);
+            }
+        };
         tcFilterBar.setBackground(BG2);
         tcFilterBar.setBorder(new EmptyBorder(4, 8, 4, 8));
 
@@ -1250,9 +1256,12 @@ public class SecurityHeadersTab extends JPanel {
         tcStatusCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyTcFilters(); });
         tcCategoryCombo = darkCombo(new String[]{"None"});
         tcCategoryCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyTcFilters(); });
+        tcStatusCodeCombo = darkCombo(new String[]{"None"});
+        tcStatusCodeCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyTcFilters(); });
 
         tcFilterBar.add(label("Path")); tcFilterBar.add(tcPathField);
         tcFilterBar.add(label("Host")); tcFilterBar.add(tcHostCombo);
+        tcFilterBar.add(label("Status Code")); tcFilterBar.add(tcStatusCodeCombo);
         tcFilterBar.add(label("Mode")); tcFilterBar.add(tcModeCombo);
         tcFilterBar.add(label("Result")); tcFilterBar.add(tcStatusCombo);
         tcFilterBar.add(label("Category")); tcFilterBar.add(tcCategoryCombo);
@@ -1261,6 +1270,7 @@ public class SecurityHeadersTab extends JPanel {
         tcClear.addActionListener(e -> {
             tcPathField.setText("");
             tcHostCombo.setSelectedIndex(0);
+            tcStatusCodeCombo.setSelectedIndex(0);
             tcModeCombo.setSelectedIndex(0);
             tcStatusCombo.setSelectedIndex(0);
             tcCategoryCombo.setSelectedIndex(0);
@@ -2244,8 +2254,10 @@ public class SecurityHeadersTab extends JPanel {
 
             Set<String> hosts = new TreeSet<>();
             Set<String> categories = new TreeSet<>();
+            Set<Integer> statusCodes = new TreeSet<>();
             for (TestcaseResult r : all) {
                 if (r.host() != null && !r.host().isEmpty()) hosts.add(r.host());
+                if (r.statusCode() > 0) statusCodes.add(r.statusCode());
                 String tcId = r.testcaseId();
                 TestcaseDefinition def = library.get(tcId);
                 if (def != null && !def.category().isEmpty()) categories.add(def.category());
@@ -2255,6 +2267,19 @@ public class SecurityHeadersTab extends JPanel {
             tcHostCombo.addItem("None");
             hosts.forEach(tcHostCombo::addItem);
             if (selHost != null && hosts.contains(selHost)) tcHostCombo.setSelectedItem(selHost);
+
+            String selCode = (String) tcStatusCodeCombo.getSelectedItem();
+            tcStatusCodeCombo.removeAllItems();
+            tcStatusCodeCombo.addItem("None");
+            statusCodes.forEach(c -> tcStatusCodeCombo.addItem(String.valueOf(c)));
+            if (selCode != null && !"None".equals(selCode)) {
+                for (int i = 0; i < tcStatusCodeCombo.getItemCount(); i++) {
+                    if (tcStatusCodeCombo.getItemAt(i).equals(selCode)) {
+                        tcStatusCodeCombo.setSelectedIndex(i);
+                        break;
+                    }
+                }
+            }
 
             String selCat = (String) tcCategoryCombo.getSelectedItem();
             tcCategoryCombo.removeAllItems();
@@ -2290,6 +2315,7 @@ public class SecurityHeadersTab extends JPanel {
 
         String pathFilter = tcPathField.getText().trim().toLowerCase();
         String hostFilter = tcHostCombo.getSelectedIndex() <= 0 ? null : (String) tcHostCombo.getSelectedItem();
+        String statusCodeFilter = tcStatusCodeCombo.getSelectedIndex() <= 0 ? null : (String) tcStatusCodeCombo.getSelectedItem();
         String modeFilter = (String) tcModeCombo.getSelectedItem();
         String statusFilter = (String) tcStatusCombo.getSelectedItem();
         String catFilter = (String) tcCategoryCombo.getSelectedItem();
@@ -2300,6 +2326,12 @@ public class SecurityHeadersTab extends JPanel {
                 if (pq == null || !pq.toLowerCase().contains(pathFilter)) return false;
             }
             if (hostFilter != null && !hostFilter.equalsIgnoreCase(r.host())) return false;
+            if (statusCodeFilter != null) {
+                try {
+                    int code = Integer.parseInt(statusCodeFilter);
+                    if (r.statusCode() != code) return false;
+                } catch (NumberFormatException ignored) {}
+            }
             if (modeFilter != null && !"None".equals(modeFilter)) {
                 if (!r.mode().name().equals(modeFilter)) return false;
             }
@@ -2759,6 +2791,27 @@ public class SecurityHeadersTab extends JPanel {
     }
 
     // ─── Widget helpers ──────────────────────────────────────────────────────
+
+    private static Dimension wrapPreferredSize(JPanel panel) {
+        int w = panel.getParent() != null ? panel.getParent().getWidth() : 0;
+        if (w == 0) return panel.getLayout().preferredLayoutSize(panel);
+        Insets ins = panel.getInsets();
+        FlowLayout fl = (FlowLayout) panel.getLayout();
+        int maxW = w - ins.left - ins.right;
+        int x = 0, y = 0, rowH = 0;
+        for (Component c : panel.getComponents()) {
+            Dimension d = c.getPreferredSize();
+            if (x > 0 && x + fl.getHgap() + d.width > maxW) {
+                y += rowH + fl.getVgap();
+                x = 0;
+                rowH = 0;
+            }
+            x += (x > 0 ? fl.getHgap() : 0) + d.width;
+            rowH = Math.max(rowH, d.height);
+        }
+        y += rowH;
+        return new Dimension(w, y + ins.top + ins.bottom + 2 * fl.getVgap());
+    }
 
     private JLabel label(String text) {
         JLabel l = new JLabel(text);

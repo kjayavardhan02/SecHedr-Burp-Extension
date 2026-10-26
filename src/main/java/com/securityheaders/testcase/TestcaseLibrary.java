@@ -70,7 +70,7 @@ public class TestcaseLibrary {
                 "Security headers on HTTP 200 response",
                 "Status Code", "Response with HTTP status 200");
         for (int code : new int[]{201, 202, 204, 206,
-                301, 302, 304, 307, 308,
+                302, 304, 307, 308,
                 400, 401, 403, 408, 409, 413, 415, 422, 429, 431, 451,
                 500, 502, 503, 504}) {
             addPassiveOnly("STATUS-" + code,
@@ -78,6 +78,10 @@ public class TestcaseLibrary {
                     "Security headers on HTTP " + code + " response",
                     "Status Code", "Response with HTTP status " + code);
         }
+        addBoth("STATUS-301",
+                "Security headers on HTTP→HTTPS 301 redirect",
+                "Request endpoint over plain HTTP to trigger 301 redirect and check security headers",
+                "Status Code", "HTTPS endpoint that redirects from HTTP");
         for (int code : new int[]{404, 405}) {
             addBoth("STATUS-" + code,
                     "Security headers with HTTP " + code,
