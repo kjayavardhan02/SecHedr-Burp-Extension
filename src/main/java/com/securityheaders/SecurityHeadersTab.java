@@ -2576,6 +2576,41 @@ public class SecurityHeadersTab extends JPanel {
                         BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
                         new EmptyBorder(6, 8, 6, 8)));
                 l.setOpaque(true);
+                l.setVerticalAlignment(SwingConstants.CENTER);
+                l.setText(val != null ? val.toString() : "");
+                SortOrder order = null;
+                if (t.getRowSorter() != null) {
+                    int modelCol = t.convertColumnIndexToModel(col);
+                    for (var sk : t.getRowSorter().getSortKeys()) {
+                        if (sk.getColumn() == modelCol) {
+                            order = sk.getSortOrder();
+                            break;
+                        }
+                    }
+                }
+                if (order != null) {
+                    boolean asc = order == SortOrder.ASCENDING;
+                    int fontH = l.getFontMetrics(l.getFont()).getHeight();
+                    l.setIconTextGap(4);
+                    l.setHorizontalTextPosition(SwingConstants.LEADING);
+                    l.setIcon(new Icon() {
+                        final int w = 8, h = fontH, triH = 6;
+                        @Override public int getIconWidth() { return w; }
+                        @Override public int getIconHeight() { return h; }
+                        @Override public void paintIcon(Component c, Graphics g, int x, int y) {
+                            Graphics2D g2 = (Graphics2D) g.create();
+                            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                            g2.setColor(ACCENT);
+                            int top = y + (h - triH) / 2;
+                            int[] xs = {x, x + w, x + w / 2};
+                            int[] ys = asc ? new int[]{top + triH, top + triH, top} : new int[]{top, top, top + triH};
+                            g2.fillPolygon(xs, ys, 3);
+                            g2.dispose();
+                        }
+                    });
+                } else {
+                    l.setIcon(null);
+                }
                 return l;
             }
         });
@@ -2811,6 +2846,10 @@ public class SecurityHeadersTab extends JPanel {
         }
         y += rowH;
         return new Dimension(w, y + ins.top + ins.bottom + 2 * fl.getVgap());
+    }
+
+    private static String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private JLabel label(String text) {

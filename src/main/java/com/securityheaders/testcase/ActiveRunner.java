@@ -522,21 +522,37 @@ public class ActiveRunner {
     private void runCookieAuthProbes(String host, int port, boolean isHttps, String pathAndQuery,
                                       HttpRequest base, String ek, List<TestcaseResult> batch) {
         HttpRequest baseGet = buildReq(host, port, isHttps, "GET", pathAndQuery, base);
+        String origCookie = baseGet.headerValue("Cookie");
+        String lsqAuth = extractCookieValue(origCookie, "LSQAUTH");
 
         // COOKIE-001: No cookie
         batch.add(sendAndCheck("COOKIE-001", removeHeader(baseGet, "Cookie"), ek, host));
 
         // COOKIE-002: Tampered cookie
-        HttpRequest tampered = replaceHeader(baseGet, "Cookie", "session=TAMPERED_INVALID_VALUE");
-        batch.add(sendAndCheck("COOKIE-002", tampered, ek, host));
+        if (lsqAuth != null) {
+            String tampered = replaceCookieValue(origCookie, "LSQAUTH", "TAMPERED_INVALID_VALUE");
+            batch.add(sendAndCheck("COOKIE-002", replaceHeader(baseGet, "Cookie", tampered), ek, host));
+        } else {
+            batch.add(sendAndCheck("COOKIE-002", replaceHeader(baseGet, "Cookie", "session=TAMPERED_INVALID_VALUE"), ek, host));
+        }
 
-        // COOKIE-003: Expired cookie
-        HttpRequest expired = replaceHeader(baseGet, "Cookie", "session=expired_session_000");
-        batch.add(sendAndCheck("COOKIE-003", expired, ek, host));
+        // COOKIE-003: Expired cookie — random value for LSQAUTH
+        if (lsqAuth != null) {
+            String randomVal = "expired_" + Long.toHexString(System.nanoTime());
+            String expired = replaceCookieValue(origCookie, "LSQAUTH", randomVal);
+            batch.add(sendAndCheck("COOKIE-003", replaceHeader(baseGet, "Cookie", expired), ek, host));
+        } else {
+            batch.add(sendAndCheck("COOKIE-003", replaceHeader(baseGet, "Cookie", "session=expired_session_000"), ek, host));
+        }
 
-        // COOKIE-004: Unknown cookie
-        HttpRequest unknown = addHeader(baseGet, "Cookie", "unknown_cookie=test_value");
-        batch.add(sendAndCheck("COOKIE-004", unknown, ek, host));
+        // COOKIE-004: Unknown cookie — random value appended to LSQAUTH
+        if (lsqAuth != null) {
+            String randomVal = lsqAuth + "_random_" + Long.toHexString(System.nanoTime());
+            String unknown = replaceCookieValue(origCookie, "LSQAUTH", randomVal);
+            batch.add(sendAndCheck("COOKIE-004", replaceHeader(baseGet, "Cookie", unknown), ek, host));
+        } else {
+            batch.add(sendAndCheck("COOKIE-004", addHeader(baseGet, "Cookie", "unknown_cookie=test_value"), ek, host));
+        }
 
         // COOKIE-005: Malformed cookie
         HttpRequest malformed = replaceHeader(baseGet, "Cookie", ";;;===malformed;;;");
@@ -952,6 +968,31 @@ public class ActiveRunner {
 
     private HttpRequest removeHeader(HttpRequest req, String name) {
         return req.withRemovedHeader(name);
+    }
+
+    private String extractCookieValue(String cookieHeader, String name) {
+        if (cookieHeader == null || cookieHeader.isEmpty()) return null;
+        for (String pair : cookieHeader.split(";")) {
+            String trimmed = pair.trim();
+            if (trimmed.startsWith(name + "=")) {
+                return trimmed.substring(name.length() + 1);
+            }
+        }
+        return null;
+    }
+
+    private String replaceCookieValue(String cookieHeader, String name, String newValue) {
+        StringBuilder sb = new StringBuilder();
+        for (String pair : cookieHeader.split(";")) {
+            String trimmed = pair.trim();
+            if (sb.length() > 0) sb.append("; ");
+            if (trimmed.startsWith(name + "=")) {
+                sb.append(name).append("=").append(newValue);
+            } else {
+                sb.append(trimmed);
+            }
+        }
+        return sb.toString();
     }
 
     private boolean isXfoCoveredByCsp(burp.api.montoya.http.message.responses.HttpResponse resp) {
