@@ -83,13 +83,8 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
             if (acaoPresence != null) return acaoPresence;
         }
 
-        // CORS-specific testcases → only show in ACAO column (index 4)
-        if (tcId.startsWith("TC-CORS-")) {
-            return headerIdx == 4 ? status : "—";
-        }
-
-        // ACAO testcases → primarily ACAO column, but also check baseline
-        if (tcId.startsWith("TC-ACAO-")) {
+        // CORS / ACAO testcases → ACAO column + check baseline headers
+        if (tcId.startsWith("CORS-") || tcId.startsWith("ACAO-")) {
             if (actual == null || actual.isEmpty()) return headerIdx == 4 ? status : "—";
             // If actual mentions missing baseline headers, derive per-header
             return deriveFromActual(actual, headerIdx, status);

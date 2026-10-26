@@ -37,18 +37,18 @@ Both engines can be toggled independently from the toolbar.
 
 | Category | IDs | What it Tests |
 |----------|-----|---------------|
-| Endpoint / Content Type | TC-HDR-001 → 011 | Headers on HTML, JSON, CSS, JS, images, fonts, downloads, auth, health, webhooks, GraphQL |
-| HTTP Status Codes | TC-STATUS-* | Headers across 27 status codes (2xx, 3xx, 4xx, 5xx) |
-| Redirect Chain | TC-REDIRECT-001 | Headers at each hop in a redirect chain |
-| Path / Query Variations | TC-PATH-001 → 006 | Root path, traversal, trailing slash, 404, query params, encoding |
-| HTTP Methods | TC-METHOD-* | Headers for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, TRACE, CONNECT, QUERY |
-| CORS / Origin | TC-ACAO-001 → 008, TC-CORS-001 → 005 | No origin, approved, unapproved, attacker, null, subdomain, scheme, port, credentials, preflight |
-| User-Agent Variations | TC-UA-001 → 006 | Desktop, mobile, bot, cURL, empty, absent user agents |
-| Sec-Fetch | TC-SECFETCH-001 → 004 | Navigate, cors, cross-site iframe, all removed |
-| Referer | TC-REFERER-001 → 005 | Absent, same-origin, cross-origin, suspicious, empty |
-| Forwarded Headers | TC-XFP/XFH/XFF-* | X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-For variations |
-| Authentication / Cookies | TC-COOKIE-001 → 005, TC-AUTH-001 → 003 | No cookie, tampered, expired, unknown, malformed, auth comparison |
-| Header Validation | TC-EDGE-001 → 005 | Duplicate headers, exact syntax, wildcards, error-page conflicts |
+| Endpoint / Content Type | HDR-001 → 011 | Headers on HTML, JSON, CSS, JS, images, fonts, downloads, auth, health, webhooks, GraphQL |
+| HTTP Status Codes | STATUS-* | Headers across 27 status codes (2xx, 3xx, 4xx, 5xx) |
+| Redirect Chain | REDIRECT-001 | Headers at each hop in a redirect chain |
+| Path / Query Variations | PATH-001 → 006 | Root path, traversal, trailing slash, 404, query params, encoding |
+| HTTP Methods | METHOD-* | Headers for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, TRACE, CONNECT, QUERY |
+| CORS / Origin | ACAO-001 → 008, CORS-001 → 005 | No origin, approved, unapproved, attacker, null, subdomain, scheme, port, credentials, preflight |
+| User-Agent Variations | UA-001 → 006 | Desktop, mobile, bot, cURL, empty, absent user agents |
+| Sec-Fetch | SECFETCH-001 → 004 | Navigate, cors, cross-site iframe, all removed |
+| Referer | REFERER-001 → 005 | Absent, same-origin, cross-origin, suspicious, empty |
+| Forwarded Headers | XFP/XFH/XFF-* | X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-For variations |
+| Authentication / Cookies | COOKIE-001 → 005, AUTH-001 → 003 | No cookie, tampered, expired, unknown, malformed, auth comparison |
+| Header Validation | EDGE-001 → 005 | Duplicate headers, exact syntax, wildcards, error-page conflicts |
 
 Testcases can also be imported from an Excel workbook.
 

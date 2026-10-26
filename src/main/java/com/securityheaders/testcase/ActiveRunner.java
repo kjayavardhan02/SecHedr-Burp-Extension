@@ -95,40 +95,40 @@ public class ActiveRunner {
                                  boolean isHttps, HttpRequest baseRequest, String endpointKey) {
         List<TestcaseResult> batch = new ArrayList<>();
 
-        // Content-type probes (TC-HDR-*)
+        // Content-type probes (HDR-*)
         runContentTypeProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // Status code probes (TC-STATUS-*)
+        // Status code probes (STATUS-*)
         runStatusCodeProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // Redirect chain (TC-REDIRECT-001)
+        // Redirect chain (REDIRECT-001)
         batch.add(runRedirectChain(host, port, isHttps, pathAndQuery, baseRequest, endpointKey));
 
-        // Path variations (TC-PATH-*)
+        // Path variations (PATH-*)
         runPathProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // Method variations (TC-METHOD-*)
+        // Method variations (METHOD-*)
         runMethodProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // CORS / Origin (TC-ACAO-*, TC-CORS-*)
+        // CORS / Origin (ACAO-*, CORS-*)
         runCorsProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // User-Agent (TC-UA-*)
+        // User-Agent (UA-*)
         runUaProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // Sec-Fetch (TC-SECFETCH-*)
+        // Sec-Fetch (SECFETCH-*)
         runSecFetchProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // Referer (TC-REFERER-*)
+        // Referer (REFERER-*)
         runRefererProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // Forwarded headers (TC-XFP-*, TC-XFH-*, TC-XFF-*)
+        // Forwarded headers (XFP-*, XFH-*, XFF-*)
         runForwardedProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // Cookie / Auth (TC-COOKIE-*, TC-AUTH-*)
+        // Cookie / Auth (COOKIE-*, AUTH-*)
         runCookieAuthProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
-        // Edge cases (TC-EDGE-*)
+        // Edge cases (EDGE-*)
         runEdgeProbes(host, port, isHttps, pathAndQuery, baseRequest, endpointKey, batch);
 
         batch.removeIf(Objects::isNull);
@@ -143,24 +143,24 @@ public class ActiveRunner {
 
     private void runContentTypeProbes(String host, int port, boolean isHttps, String pathAndQuery,
                                        HttpRequest base, String ek, List<TestcaseResult> batch) {
-        // TC-HDR-002: JSON/API — modifies Accept header
+        // HDR-002: JSON/API — modifies Accept header
         HttpRequest jsonReq = replaceHeader(buildReq(host, port, isHttps, "GET", pathAndQuery, base),
                 "Accept", "application/json");
-        batch.add(sendAndCheck("TC-HDR-002", jsonReq, ek, host));
+        batch.add(sendAndCheck("HDR-002", jsonReq, ek, host));
 
-        // TC-HDR-008: Auth endpoint — probe first reachable auth path
-        batch.add(sendFirstReachable("TC-HDR-008", host, port, isHttps, base, ek,
+        // HDR-008: Auth endpoint — probe first reachable auth path
+        batch.add(sendFirstReachable("HDR-008", host, port, isHttps, base, ek,
                 "/login", "/auth", "/signin"));
 
-        // TC-HDR-009: Health endpoint — probe first reachable health path
-        batch.add(sendFirstReachable("TC-HDR-009", host, port, isHttps, base, ek,
+        // HDR-009: Health endpoint — probe first reachable health path
+        batch.add(sendFirstReachable("HDR-009", host, port, isHttps, base, ek,
                 "/health", "/status", "/ping"));
 
-        // TC-HDR-010: Webhook
-        batch.add(sendAndCheck("TC-HDR-010", buildReq(host, port, isHttps, "POST", "/webhook", base), ek, host));
+        // HDR-010: Webhook
+        batch.add(sendAndCheck("HDR-010", buildReq(host, port, isHttps, "POST", "/webhook", base), ek, host));
 
-        // TC-HDR-011: GraphQL
-        batch.add(sendAndCheck("TC-HDR-011", buildReq(host, port, isHttps, "POST", "/graphql", base), ek, host));
+        // HDR-011: GraphQL
+        batch.add(sendAndCheck("HDR-011", buildReq(host, port, isHttps, "POST", "/graphql", base), ek, host));
     }
 
     // --- Status Code Probes ---
@@ -168,10 +168,10 @@ public class ActiveRunner {
     private void runStatusCodeProbes(String host, int port, boolean isHttps, String pathAndQuery,
                                       HttpRequest base, String ek, List<TestcaseResult> batch) {
         // 404 — non-existent path
-        batch.add(sendAndCheck("TC-STATUS-404", buildReq(host, port, isHttps, "GET", "/nonexistent-shtest-404", base), ek, host));
+        batch.add(sendAndCheck("STATUS-404", buildReq(host, port, isHttps, "GET", "/nonexistent-shtest-404", base), ek, host));
 
         // 405 — wrong method
-        batch.add(sendAndCheck("TC-STATUS-405", buildReq(host, port, isHttps, "PATCH", pathAndQuery, base), ek, host));
+        batch.add(sendAndCheck("STATUS-405", buildReq(host, port, isHttps, "PATCH", pathAndQuery, base), ek, host));
 
         // Status codes 201-504 (except 404/405) are passive-only — no active probes needed
     }
@@ -180,8 +180,8 @@ public class ActiveRunner {
 
     private TestcaseResult runRedirectChain(String host, int port, boolean isHttps,
                                              String pathAndQuery, HttpRequest base, String ek) {
-        if (!isSelected("TC-REDIRECT-001")) return null;
-        TestcaseDefinition tc = library.get("TC-REDIRECT-001");
+        if (!isSelected("REDIRECT-001")) return null;
+        TestcaseDefinition tc = library.get("REDIRECT-001");
         if (tc == null) return null;
 
         HttpRequest req = addMarker(buildReq(host, port, isHttps, "GET", pathAndQuery, base));
@@ -253,26 +253,26 @@ public class ActiveRunner {
 
     private void runPathProbes(String host, int port, boolean isHttps, String pathAndQuery,
                                 HttpRequest base, String ek, List<TestcaseResult> batch) {
-        // TC-PATH-001: Root path
-        batch.add(sendAndCheck("TC-PATH-001", buildReq(host, port, isHttps, "GET", "/", base), ek, host));
+        // PATH-001: Root path
+        batch.add(sendAndCheck("PATH-001", buildReq(host, port, isHttps, "GET", "/", base), ek, host));
 
-        // TC-PATH-002: Parent path segments
-        batch.add(sendAndCheck("TC-PATH-002", buildReq(host, port, isHttps, "GET", "/../" + pathAndQuery, base), ek, host));
+        // PATH-002: Parent path segments
+        batch.add(sendAndCheck("PATH-002", buildReq(host, port, isHttps, "GET", "/../" + pathAndQuery, base), ek, host));
 
-        // TC-PATH-003: Trailing slash
+        // PATH-003: Trailing slash
         String trailingSlash = pathAndQuery.endsWith("/") ? pathAndQuery : pathAndQuery + "/";
-        batch.add(sendAndCheck("TC-PATH-003", buildReq(host, port, isHttps, "GET", trailingSlash, base), ek, host));
+        batch.add(sendAndCheck("PATH-003", buildReq(host, port, isHttps, "GET", trailingSlash, base), ek, host));
 
-        // TC-PATH-004: Non-existent path
-        batch.add(sendAndCheck("TC-PATH-004", buildReq(host, port, isHttps, "GET", "/nonexistent-shtest-path-" + System.nanoTime() % 10000, base), ek, host));
+        // PATH-004: Non-existent path
+        batch.add(sendAndCheck("PATH-004", buildReq(host, port, isHttps, "GET", "/nonexistent-shtest-path-" + System.nanoTime() % 10000, base), ek, host));
 
-        // TC-PATH-005: Query parameter variation
+        // PATH-005: Query parameter variation
         String qPath = pathAndQuery.contains("?") ? pathAndQuery + "&_shtest=1" : pathAndQuery + "?_shtest=1";
-        batch.add(sendAndCheck("TC-PATH-005", buildReq(host, port, isHttps, "GET", qPath, base), ek, host));
+        batch.add(sendAndCheck("PATH-005", buildReq(host, port, isHttps, "GET", qPath, base), ek, host));
 
-        // TC-PATH-006: Encoded path
+        // PATH-006: Encoded path
         String encoded = pathAndQuery.replace("/", "/%2F").replaceFirst("/%2F", "/");
-        batch.add(sendAndCheck("TC-PATH-006", buildReq(host, port, isHttps, "GET", encoded, base), ek, host));
+        batch.add(sendAndCheck("PATH-006", buildReq(host, port, isHttps, "GET", encoded, base), ek, host));
     }
 
     // --- Method Probes ---
@@ -281,7 +281,7 @@ public class ActiveRunner {
                                   HttpRequest base, String ek, List<TestcaseResult> batch) {
         for (String m : new String[]{"GET", "POST", "PUT", "PATCH", "DELETE",
                 "HEAD", "OPTIONS", "TRACE", "CONNECT", "QUERY"}) {
-            batch.add(sendAndCheck("TC-METHOD-" + m,
+            batch.add(sendAndCheck("METHOD-" + m,
                     buildReq(host, port, isHttps, m, pathAndQuery, base), ek, host));
         }
     }
@@ -292,68 +292,68 @@ public class ActiveRunner {
                                 HttpRequest base, String ek, List<TestcaseResult> batch) {
         HttpRequest baseGet = buildReq(host, port, isHttps, "GET", pathAndQuery, base);
 
-        // TC-ACAO-001: No Origin
-        batch.add(sendAndCheck("TC-ACAO-001", removeHeader(baseGet, "Origin"), ek, host));
+        // ACAO-001: No Origin
+        batch.add(sendAndCheck("ACAO-001", removeHeader(baseGet, "Origin"), ek, host));
 
-        // TC-ACAO-002: Approved Origin
-        batch.add(sendAndCheckCors("TC-ACAO-002",
+        // ACAO-002: Approved Origin
+        batch.add(sendAndCheckCors("ACAO-002",
                 addHeader(baseGet, "Origin", "https://" + host), ek, host, "https://" + host));
 
-        // TC-ACAO-003: Unapproved Origin
-        batch.add(sendAndCheckCors("TC-ACAO-003",
+        // ACAO-003: Unapproved Origin
+        batch.add(sendAndCheckCors("ACAO-003",
                 addHeader(baseGet, "Origin", "https://unapproved-test.example.com"), ek, host,
                 "https://unapproved-test.example.com"));
 
-        // TC-ACAO-004: Random attacker Origin
-        batch.add(sendAndCheckCors("TC-ACAO-004",
+        // ACAO-004: Random attacker Origin
+        batch.add(sendAndCheckCors("ACAO-004",
                 addHeader(baseGet, "Origin", "https://evil-attacker.com"), ek, host,
                 "https://evil-attacker.com"));
 
-        // TC-ACAO-005: null Origin
-        batch.add(sendAndCheckCors("TC-ACAO-005",
+        // ACAO-005: null Origin
+        batch.add(sendAndCheckCors("ACAO-005",
                 addHeader(baseGet, "Origin", "null"), ek, host, "null"));
 
-        // TC-ACAO-006: Subdomain Origin
-        batch.add(sendAndCheckCors("TC-ACAO-006",
+        // ACAO-006: Subdomain Origin
+        batch.add(sendAndCheckCors("ACAO-006",
                 addHeader(baseGet, "Origin", "https://sub." + host), ek, host,
                 "https://sub." + host));
 
-        // TC-ACAO-007: Scheme variation
-        batch.add(sendAndCheckCors("TC-ACAO-007",
+        // ACAO-007: Scheme variation
+        batch.add(sendAndCheckCors("ACAO-007",
                 addHeader(baseGet, "Origin", "http://" + host), ek, host,
                 "http://" + host));
 
-        // TC-ACAO-008: Port variation
-        batch.add(sendAndCheckCors("TC-ACAO-008",
+        // ACAO-008: Port variation
+        batch.add(sendAndCheckCors("ACAO-008",
                 addHeader(baseGet, "Origin", "https://" + host + ":8443"), ek, host,
                 "https://" + host + ":8443"));
 
-        // TC-CORS-001: Credentials check (send with Origin and check)
-        batch.add(sendAndCheckCorsCredentials("TC-CORS-001",
+        // CORS-001: Credentials check (send with Origin and check)
+        batch.add(sendAndCheckCorsCredentials("CORS-001",
                 addHeader(baseGet, "Origin", "https://" + host), ek, host));
 
-        // TC-CORS-002: Preflight allowed methods
+        // CORS-002: Preflight allowed methods
         HttpRequest preflight = buildReq(host, port, isHttps, "OPTIONS", pathAndQuery, base);
         preflight = addHeader(preflight, "Origin", "https://" + host);
         preflight = addHeader(preflight, "Access-Control-Request-Method", "POST");
-        batch.add(sendAndCheckCorsHeader("TC-CORS-002", preflight, ek, host,
+        batch.add(sendAndCheckCorsHeader("CORS-002", preflight, ek, host,
                 "Access-Control-Allow-Methods"));
 
-        // TC-CORS-003: Preflight allowed headers
+        // CORS-003: Preflight allowed headers
         HttpRequest preflightHdr = buildReq(host, port, isHttps, "OPTIONS", pathAndQuery, base);
         preflightHdr = addHeader(preflightHdr, "Origin", "https://" + host);
         preflightHdr = addHeader(preflightHdr, "Access-Control-Request-Method", "GET");
         preflightHdr = addHeader(preflightHdr, "Access-Control-Request-Headers", "X-Custom-Header");
-        batch.add(sendAndCheckCorsHeader("TC-CORS-003", preflightHdr, ek, host,
+        batch.add(sendAndCheckCorsHeader("CORS-003", preflightHdr, ek, host,
                 "Access-Control-Allow-Headers"));
 
-        // TC-CORS-004: Expose headers
-        batch.add(sendAndCheckCorsHeader("TC-CORS-004",
+        // CORS-004: Expose headers
+        batch.add(sendAndCheckCorsHeader("CORS-004",
                 addHeader(baseGet, "Origin", "https://" + host), ek, host,
                 "Access-Control-Expose-Headers"));
 
-        // TC-CORS-005: Preflight cache
-        batch.add(sendAndCheckCorsHeader("TC-CORS-005", preflight, ek, host,
+        // CORS-005: Preflight cache
+        batch.add(sendAndCheckCorsHeader("CORS-005", preflight, ek, host,
                 "Access-Control-Max-Age"));
     }
 
@@ -363,25 +363,25 @@ public class ActiveRunner {
                               HttpRequest base, String ek, List<TestcaseResult> batch) {
         HttpRequest baseGet = buildReq(host, port, isHttps, "GET", pathAndQuery, base);
 
-        batch.add(sendAndCheck("TC-UA-001",
+        batch.add(sendAndCheck("UA-001",
                 replaceHeader(baseGet, "User-Agent",
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"),
                 ek, host));
-        batch.add(sendAndCheck("TC-UA-002",
+        batch.add(sendAndCheck("UA-002",
                 replaceHeader(baseGet, "User-Agent",
                         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148"),
                 ek, host));
-        batch.add(sendAndCheck("TC-UA-003",
+        batch.add(sendAndCheck("UA-003",
                 replaceHeader(baseGet, "User-Agent",
                         "Googlebot/2.1 (+http://www.google.com/bot.html)"),
                 ek, host));
-        batch.add(sendAndCheck("TC-UA-004",
+        batch.add(sendAndCheck("UA-004",
                 replaceHeader(baseGet, "User-Agent", "curl/8.4.0"),
                 ek, host));
-        batch.add(sendAndCheck("TC-UA-005",
+        batch.add(sendAndCheck("UA-005",
                 replaceHeader(baseGet, "User-Agent", ""),
                 ek, host));
-        batch.add(sendAndCheck("TC-UA-006",
+        batch.add(sendAndCheck("UA-006",
                 removeHeader(baseGet, "User-Agent"),
                 ek, host));
     }
@@ -392,29 +392,29 @@ public class ActiveRunner {
                                     HttpRequest base, String ek, List<TestcaseResult> batch) {
         HttpRequest baseGet = buildReq(host, port, isHttps, "GET", pathAndQuery, base);
 
-        // TC-SECFETCH-001: navigate
+        // SECFETCH-001: navigate
         HttpRequest sf1 = addHeader(baseGet, "Sec-Fetch-Mode", "navigate");
         sf1 = addHeader(sf1, "Sec-Fetch-Site", "none");
         sf1 = addHeader(sf1, "Sec-Fetch-Dest", "document");
-        batch.add(sendAndCheck("TC-SECFETCH-001", sf1, ek, host));
+        batch.add(sendAndCheck("SECFETCH-001", sf1, ek, host));
 
-        // TC-SECFETCH-002: cors
+        // SECFETCH-002: cors
         HttpRequest sf2 = addHeader(baseGet, "Sec-Fetch-Mode", "cors");
         sf2 = addHeader(sf2, "Sec-Fetch-Site", "same-origin");
-        batch.add(sendAndCheck("TC-SECFETCH-002", sf2, ek, host));
+        batch.add(sendAndCheck("SECFETCH-002", sf2, ek, host));
 
-        // TC-SECFETCH-003: cross-site iframe
+        // SECFETCH-003: cross-site iframe
         HttpRequest sf3 = addHeader(baseGet, "Sec-Fetch-Mode", "navigate");
         sf3 = addHeader(sf3, "Sec-Fetch-Site", "cross-site");
         sf3 = addHeader(sf3, "Sec-Fetch-Dest", "iframe");
-        batch.add(sendAndCheck("TC-SECFETCH-003", sf3, ek, host));
+        batch.add(sendAndCheck("SECFETCH-003", sf3, ek, host));
 
-        // TC-SECFETCH-004: all removed
+        // SECFETCH-004: all removed
         HttpRequest sf4 = removeHeader(baseGet, "Sec-Fetch-Mode");
         sf4 = removeHeader(sf4, "Sec-Fetch-Site");
         sf4 = removeHeader(sf4, "Sec-Fetch-Dest");
         sf4 = removeHeader(sf4, "Sec-Fetch-User");
-        batch.add(sendAndCheck("TC-SECFETCH-004", sf4, ek, host));
+        batch.add(sendAndCheck("SECFETCH-004", sf4, ek, host));
     }
 
     // --- Referer Probes ---
@@ -423,14 +423,14 @@ public class ActiveRunner {
                                    HttpRequest base, String ek, List<TestcaseResult> batch) {
         HttpRequest baseGet = buildReq(host, port, isHttps, "GET", pathAndQuery, base);
 
-        batch.add(sendAndCheck("TC-REFERER-001", removeHeader(baseGet, "Referer"), ek, host));
-        batch.add(sendAndCheck("TC-REFERER-002",
+        batch.add(sendAndCheck("REFERER-001", removeHeader(baseGet, "Referer"), ek, host));
+        batch.add(sendAndCheck("REFERER-002",
                 addHeader(baseGet, "Referer", "https://" + host + "/page"), ek, host));
-        batch.add(sendAndCheck("TC-REFERER-003",
+        batch.add(sendAndCheck("REFERER-003",
                 addHeader(baseGet, "Referer", "https://external-site.example.com/page"), ek, host));
-        batch.add(sendAndCheck("TC-REFERER-004",
+        batch.add(sendAndCheck("REFERER-004",
                 addHeader(baseGet, "Referer", "https://evil-phishing-site.com/malware"), ek, host));
-        batch.add(sendAndCheck("TC-REFERER-005",
+        batch.add(sendAndCheck("REFERER-005",
                 addHeader(baseGet, "Referer", ""), ek, host));
     }
 
@@ -441,19 +441,19 @@ public class ActiveRunner {
         HttpRequest baseGet = buildReq(host, port, isHttps, "GET", pathAndQuery, base);
 
         // XFP
-        batch.add(sendAndCheck("TC-XFP-001", addHeader(baseGet, "X-Forwarded-Proto", "http"), ek, host));
-        batch.add(sendAndCheck("TC-XFP-002", addHeader(baseGet, "X-Forwarded-Proto", "https"), ek, host));
-        batch.add(sendAndCheck("TC-XFP-003", addHeader(baseGet, "X-Forwarded-Proto", "ftp"), ek, host));
+        batch.add(sendAndCheck("XFP-001", addHeader(baseGet, "X-Forwarded-Proto", "http"), ek, host));
+        batch.add(sendAndCheck("XFP-002", addHeader(baseGet, "X-Forwarded-Proto", "https"), ek, host));
+        batch.add(sendAndCheck("XFP-003", addHeader(baseGet, "X-Forwarded-Proto", "ftp"), ek, host));
 
         // XFH
-        batch.add(sendAndCheck("TC-XFH-001", addHeader(baseGet, "X-Forwarded-Host", "evil-external.com"), ek, host));
-        batch.add(sendAndCheck("TC-XFH-002", addHeader(baseGet, "X-Forwarded-Host", "localhost"), ek, host));
+        batch.add(sendAndCheck("XFH-001", addHeader(baseGet, "X-Forwarded-Host", "evil-external.com"), ek, host));
+        batch.add(sendAndCheck("XFH-002", addHeader(baseGet, "X-Forwarded-Host", "localhost"), ek, host));
 
         // XFF
-        batch.add(sendAndCheck("TC-XFF-001", addHeader(baseGet, "X-Forwarded-For", "127.0.0.1"), ek, host));
-        batch.add(sendAndCheck("TC-XFF-002", addHeader(baseGet, "X-Forwarded-For", "10.0.0.1"), ek, host));
-        batch.add(sendAndCheck("TC-XFF-003", addHeader(baseGet, "X-Forwarded-For", "1.2.3.4"), ek, host));
-        batch.add(sendAndCheck("TC-XFF-004", addHeader(baseGet, "X-Forwarded-For", "1.2.3.4, 5.6.7.8"), ek, host));
+        batch.add(sendAndCheck("XFF-001", addHeader(baseGet, "X-Forwarded-For", "127.0.0.1"), ek, host));
+        batch.add(sendAndCheck("XFF-002", addHeader(baseGet, "X-Forwarded-For", "10.0.0.1"), ek, host));
+        batch.add(sendAndCheck("XFF-003", addHeader(baseGet, "X-Forwarded-For", "1.2.3.4"), ek, host));
+        batch.add(sendAndCheck("XFF-004", addHeader(baseGet, "X-Forwarded-For", "1.2.3.4, 5.6.7.8"), ek, host));
     }
 
     // --- Infrastructure Probes ---
@@ -464,34 +464,34 @@ public class ActiveRunner {
                                       HttpRequest base, String ek, List<TestcaseResult> batch) {
         HttpRequest baseGet = buildReq(host, port, isHttps, "GET", pathAndQuery, base);
 
-        // TC-COOKIE-001: No cookie
-        batch.add(sendAndCheck("TC-COOKIE-001", removeHeader(baseGet, "Cookie"), ek, host));
+        // COOKIE-001: No cookie
+        batch.add(sendAndCheck("COOKIE-001", removeHeader(baseGet, "Cookie"), ek, host));
 
-        // TC-COOKIE-002: Tampered cookie
+        // COOKIE-002: Tampered cookie
         HttpRequest tampered = replaceHeader(baseGet, "Cookie", "session=TAMPERED_INVALID_VALUE");
-        batch.add(sendAndCheck("TC-COOKIE-002", tampered, ek, host));
+        batch.add(sendAndCheck("COOKIE-002", tampered, ek, host));
 
-        // TC-COOKIE-003: Expired cookie
+        // COOKIE-003: Expired cookie
         HttpRequest expired = replaceHeader(baseGet, "Cookie", "session=expired_session_000");
-        batch.add(sendAndCheck("TC-COOKIE-003", expired, ek, host));
+        batch.add(sendAndCheck("COOKIE-003", expired, ek, host));
 
-        // TC-COOKIE-004: Unknown cookie
+        // COOKIE-004: Unknown cookie
         HttpRequest unknown = addHeader(baseGet, "Cookie", "unknown_cookie=test_value");
-        batch.add(sendAndCheck("TC-COOKIE-004", unknown, ek, host));
+        batch.add(sendAndCheck("COOKIE-004", unknown, ek, host));
 
-        // TC-COOKIE-005: Malformed cookie
+        // COOKIE-005: Malformed cookie
         HttpRequest malformed = replaceHeader(baseGet, "Cookie", ";;;===malformed;;;");
-        batch.add(sendAndCheck("TC-COOKIE-005", malformed, ek, host));
+        batch.add(sendAndCheck("COOKIE-005", malformed, ek, host));
 
-        // TC-AUTH-001: Authenticated vs unauthenticated
-        batch.add(sendAndCheck("TC-AUTH-001", removeHeader(baseGet, "Cookie"), ek, host));
+        // AUTH-001: Authenticated vs unauthenticated
+        batch.add(sendAndCheck("AUTH-001", removeHeader(baseGet, "Cookie"), ek, host));
 
-        // TC-AUTH-002: SSO/OAuth redirect — check auth paths
-        addNotTested("TC-AUTH-002", ek, host, pathAndQuery, batch,
+        // AUTH-002: SSO/OAuth redirect — check auth paths
+        addNotTested("AUTH-002", ek, host, pathAndQuery, batch,
                 "Requires approved test accounts and callback endpoints");
 
-        // TC-AUTH-003: Logout
-        batch.add(sendAndCheck("TC-AUTH-003",
+        // AUTH-003: Logout
+        batch.add(sendAndCheck("AUTH-003",
                 buildReq(host, port, isHttps, "GET", "/logout", base), ek, host));
     }
 
@@ -501,18 +501,18 @@ public class ActiveRunner {
                                 HttpRequest base, String ek, List<TestcaseResult> batch) {
         HttpRequest baseGet = buildReq(host, port, isHttps, "GET", pathAndQuery, base);
 
-        // TC-EDGE-001: Duplicate headers check
-        batch.add(sendAndCheckDuplicates("TC-EDGE-001", baseGet, ek, host));
+        // EDGE-001: Duplicate headers check
+        batch.add(sendAndCheckDuplicates("EDGE-001", baseGet, ek, host));
 
-        // TC-EDGE-003: Exact syntax check
-        batch.add(sendAndCheckExact("TC-EDGE-003", baseGet, ek, host));
+        // EDGE-003: Exact syntax check
+        batch.add(sendAndCheckExact("EDGE-003", baseGet, ek, host));
 
-        // TC-EDGE-004: Wildcard check
-        batch.add(sendAndCheckWildcard("TC-EDGE-004",
+        // EDGE-004: Wildcard check
+        batch.add(sendAndCheckWildcard("EDGE-004",
                 addHeader(baseGet, "Origin", "https://wildcard-test.com"), ek, host));
 
-        // TC-EDGE-005: Error page duplicates
-        batch.add(sendAndCheckDuplicates("TC-EDGE-005",
+        // EDGE-005: Error page duplicates
+        batch.add(sendAndCheckDuplicates("EDGE-005",
                 buildReq(host, port, isHttps, "GET", "/nonexistent-edge-test-404", base), ek, host));
     }
 
@@ -634,15 +634,28 @@ public class ActiveRunner {
             String path = request.path() != null ? request.path() : "/";
             int status = resp.statusCode();
 
-            boolean fail = acao != null && "*".equals(acao.trim())
+            boolean credsFail = acao != null && "*".equals(acao.trim())
                     && "true".equalsIgnoreCase(creds != null ? creds.trim() : "");
+
+            List<String> missing = new ArrayList<>();
+            for (String h : BASELINE_HEADERS) {
+                if (resp.headerValue(h) == null) {
+                    if (h.equals("x-frame-options") && isXfoCoveredByCsp(resp)) continue;
+                    missing.add(h);
+                }
+            }
+
+            boolean fail = credsFail || !missing.isEmpty();
+            String actual = missing.isEmpty() ? "All present" : "Missing: " + String.join(", ", missing);
+            if (credsFail) actual += "; ACAO wildcard with credentials=true";
 
             return makeResult(tc, ek, host, path, status,
                     fail ? ResultStatus.FAIL : ResultStatus.PASS,
-                    fail ? "ACAO wildcard with credentials=true" : "CORS credentials safe",
-                    tc.expectedResult(),
-                    "ACAO: " + (acao != null ? acao : "(absent)") + "; Credentials: " + (creds != null ? creds : "(absent)"),
-                    "");
+                    fail ? (credsFail ? "ACAO wildcard with credentials=true"
+                            : "Missing: " + String.join(", ", missing))
+                         : "CORS credentials safe",
+                    tc.expectedResult(), actual,
+                    "Credentials: " + (creds != null ? creds : "(absent)"));
         } catch (Exception e) {
             return makeResult(tc, ek, host, "", 0, ResultStatus.ERROR,
                     e.getMessage(), tc.expectedResult(), "", e.toString());
@@ -851,21 +864,19 @@ public class ActiveRunner {
 
     private HttpRequest buildReq(String host, int port, boolean isHttps,
                                   String method, String path, HttpRequest base) {
-        HttpRequest req = HttpRequest.httpRequest()
+        if (base != null) {
+            return base
+                    .withService(burp.api.montoya.http.HttpService.httpService(host, port, isHttps))
+                    .withMethod(method)
+                    .withPath(path)
+                    .withRemovedHeader("Host")
+                    .withAddedHeader("Host", host);
+        }
+        return HttpRequest.httpRequest()
                 .withService(burp.api.montoya.http.HttpService.httpService(host, port, isHttps))
                 .withMethod(method)
                 .withPath(path)
                 .withHeader("Host", host);
-
-        if (base != null) {
-            String ua = base.headerValue("User-Agent");
-            if (ua != null) req = req.withHeader("User-Agent", ua);
-            String accept = base.headerValue("Accept");
-            if (accept != null) req = req.withHeader("Accept", accept);
-            String cookie = base.headerValue("Cookie");
-            if (cookie != null) req = req.withHeader("Cookie", cookie);
-        }
-        return req;
     }
 
     private HttpRequest addMarker(HttpRequest req) {

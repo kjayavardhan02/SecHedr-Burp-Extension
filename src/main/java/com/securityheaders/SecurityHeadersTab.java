@@ -129,6 +129,7 @@ public class SecurityHeadersTab extends JPanel {
     private JComboBox<String> tcStatusCombo;
     private JComboBox<String> tcCategoryCombo;
     private JComboBox<String> tcHostCombo;
+    private JTextField tcPathField;
 
     private List<HeaderResult> currentFiltered = new ArrayList<>();
     private List<HeaderResult> currentRepFiltered = new ArrayList<>();
@@ -1236,6 +1237,10 @@ public class SecurityHeadersTab extends JPanel {
         tcFilterBar.setBackground(BG2);
         tcFilterBar.setBorder(new EmptyBorder(4, 8, 4, 8));
 
+        tcPathField = darkField(14);
+        tcPathField.setToolTipText("Search path (substring match)");
+        tcPathField.addActionListener(e -> applyTcFilters());
+
         tcHostCombo = darkCombo(new String[]{"None"});
         tcHostCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyTcFilters(); });
         tcModeCombo = darkCombo(new String[]{"None", "PASSIVE", "ACTIVE"});
@@ -1245,6 +1250,7 @@ public class SecurityHeadersTab extends JPanel {
         tcCategoryCombo = darkCombo(new String[]{"None"});
         tcCategoryCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyTcFilters(); });
 
+        tcFilterBar.add(label("Path")); tcFilterBar.add(tcPathField);
         tcFilterBar.add(label("Host")); tcFilterBar.add(tcHostCombo);
         tcFilterBar.add(label("Mode")); tcFilterBar.add(tcModeCombo);
         tcFilterBar.add(label("Result")); tcFilterBar.add(tcStatusCombo);
@@ -1252,6 +1258,7 @@ public class SecurityHeadersTab extends JPanel {
 
         JButton tcClear = pill("Reset", new Color(60, 64, 76), new Color(75, 80, 94));
         tcClear.addActionListener(e -> {
+            tcPathField.setText("");
             tcHostCombo.setSelectedIndex(0);
             tcModeCombo.setSelectedIndex(0);
             tcStatusCombo.setSelectedIndex(0);
@@ -2298,12 +2305,17 @@ public class SecurityHeadersTab extends JPanel {
     private void applyTcFilters() {
         List<TestcaseResult> all = tcResultStore.getAll();
 
+        String pathFilter = tcPathField.getText().trim().toLowerCase();
         String hostFilter = tcHostCombo.getSelectedIndex() <= 0 ? null : (String) tcHostCombo.getSelectedItem();
         String modeFilter = (String) tcModeCombo.getSelectedItem();
         String statusFilter = (String) tcStatusCombo.getSelectedItem();
         String catFilter = (String) tcCategoryCombo.getSelectedItem();
 
         currentTcFiltered = all.stream().filter(r -> {
+            if (!pathFilter.isEmpty()) {
+                String pq = r.pathAndQuery();
+                if (pq == null || !pq.toLowerCase().contains(pathFilter)) return false;
+            }
             if (hostFilter != null && !hostFilter.equalsIgnoreCase(r.host())) return false;
             if (modeFilter != null && !"None".equals(modeFilter)) {
                 if (!r.mode().name().equals(modeFilter)) return false;

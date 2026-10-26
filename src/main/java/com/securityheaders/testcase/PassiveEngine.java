@@ -38,7 +38,7 @@ public class PassiveEngine {
         }
 
         // Status code check
-        String statusId = "TC-STATUS-" + obs.statusCode();
+        String statusId = "STATUS-" + obs.statusCode();
         TestcaseDefinition statusTc = lookup(statusId);
         if (statusTc != null) {
             results.add(evaluateAllBaseline(statusTc, obs));
@@ -46,7 +46,7 @@ public class PassiveEngine {
 
         // Redirect chain — passive: check 3xx responses have security headers
         if (obs.statusCode() >= 300 && obs.statusCode() < 400) {
-            TestcaseDefinition redirectTc = lookup("TC-REDIRECT-001");
+            TestcaseDefinition redirectTc = lookup("REDIRECT-001");
             if (redirectTc != null) {
                 results.add(evaluateAllBaseline(redirectTc, obs));
             }
@@ -56,7 +56,7 @@ public class PassiveEngine {
         evaluatePathChecks(obs, results);
 
         // Method check
-        String methodId = "TC-METHOD-" + obs.method().toUpperCase(Locale.ROOT);
+        String methodId = "METHOD-" + obs.method().toUpperCase(Locale.ROOT);
         TestcaseDefinition methodTc = lookup(methodId);
         if (methodTc != null) {
             results.add(evaluateAllBaseline(methodTc, obs));
@@ -92,37 +92,37 @@ public class PassiveEngine {
         String disposition = obs.headersLower().get("content-disposition");
 
         if (disposition != null && disposition.toLowerCase(Locale.ROOT).contains("attachment")) {
-            return "TC-HDR-007";
+            return "HDR-007";
         }
 
         if (path.contains("/login") || path.contains("/logout") || path.contains("/auth")
                 || path.contains("/callback") || path.contains("/oauth")
                 || path.contains("/signin") || path.contains("/signout")) {
-            return "TC-HDR-008";
+            return "HDR-008";
         }
         if (path.matches(".*/(health|status|ping|ready|alive)(/.*)?$")) {
-            return "TC-HDR-009";
+            return "HDR-009";
         }
         if (path.contains("/webhook") || path.contains("/callback") || path.contains("/hook")) {
-            return "TC-HDR-010";
+            return "HDR-010";
         }
         if (path.contains("/graphql")) {
-            return "TC-HDR-011";
+            return "HDR-011";
         }
 
         if (ct == null) return null;
         String ctLower = ct.toLowerCase(Locale.ROOT);
 
-        if (ctLower.contains("text/html")) return "TC-HDR-001";
+        if (ctLower.contains("text/html")) return "HDR-001";
         if (ctLower.contains("application/json") || ctLower.contains("application/xml")
-                || ctLower.contains("text/xml")) return "TC-HDR-002";
-        if (ctLower.contains("text/css")) return "TC-HDR-003";
-        if (ctLower.contains("javascript") || ctLower.contains("ecmascript")) return "TC-HDR-004";
-        if (ctLower.startsWith("image/")) return "TC-HDR-005";
+                || ctLower.contains("text/xml")) return "HDR-002";
+        if (ctLower.contains("text/css")) return "HDR-003";
+        if (ctLower.contains("javascript") || ctLower.contains("ecmascript")) return "HDR-004";
+        if (ctLower.startsWith("image/")) return "HDR-005";
         if (ctLower.contains("font") || ctLower.contains("woff") || ctLower.contains("ttf")
-                || ctLower.contains("otf")) return "TC-HDR-006";
+                || ctLower.contains("otf")) return "HDR-006";
         if (ctLower.contains("application/octet-stream") || ctLower.contains("application/pdf")
-                || ctLower.contains("application/zip")) return "TC-HDR-007";
+                || ctLower.contains("application/zip")) return "HDR-007";
 
         return null;
     }
@@ -131,27 +131,27 @@ public class PassiveEngine {
         String path = obs.pathAndQuery();
 
         if ("/".equals(path) || "".equals(path)) {
-            TestcaseDefinition tc = lookup("TC-PATH-001");
+            TestcaseDefinition tc = lookup("PATH-001");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
         if (path.contains("..")) {
-            TestcaseDefinition tc = lookup("TC-PATH-002");
+            TestcaseDefinition tc = lookup("PATH-002");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
         if (path.endsWith("/") && path.length() > 1) {
-            TestcaseDefinition tc = lookup("TC-PATH-003");
+            TestcaseDefinition tc = lookup("PATH-003");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
         if (obs.statusCode() == 404) {
-            TestcaseDefinition tc = lookup("TC-PATH-004");
+            TestcaseDefinition tc = lookup("PATH-004");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
         if (path.contains("?")) {
-            TestcaseDefinition tc = lookup("TC-PATH-005");
+            TestcaseDefinition tc = lookup("PATH-005");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
         if (path.contains("%")) {
-            TestcaseDefinition tc = lookup("TC-PATH-006");
+            TestcaseDefinition tc = lookup("PATH-006");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
     }
@@ -162,19 +162,19 @@ public class PassiveEngine {
         String creds = obs.headersLower().get("access-control-allow-credentials");
 
         if (reqOrigin == null) {
-            TestcaseDefinition tc = lookup("TC-ACAO-001");
+            TestcaseDefinition tc = lookup("ACAO-001");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         } else {
             boolean isOwnOrigin = reqOrigin.contains(obs.host());
             if (isOwnOrigin) {
-                TestcaseDefinition tc = lookup("TC-ACAO-002");
+                TestcaseDefinition tc = lookup("ACAO-002");
                 if (tc != null) results.add(evaluateAcaoBaseline(tc, obs, acao, reqOrigin));
             } else {
-                TestcaseDefinition tc = lookup("TC-ACAO-003");
+                TestcaseDefinition tc = lookup("ACAO-003");
                 if (tc != null) results.add(evaluateAcaoBaseline(tc, obs, acao, reqOrigin));
 
                 if ("null".equals(reqOrigin)) {
-                    TestcaseDefinition tcNull = lookup("TC-ACAO-005");
+                    TestcaseDefinition tcNull = lookup("ACAO-005");
                     if (tcNull != null) results.add(evaluateAcaoBaseline(tcNull, obs, acao, reqOrigin));
                 }
             }
@@ -182,20 +182,25 @@ public class PassiveEngine {
 
         // CORS credential check
         if (acao != null) {
-            TestcaseDefinition corsCreds = lookup("TC-CORS-001");
+            TestcaseDefinition corsCreds = lookup("CORS-001");
             if (corsCreds != null) {
-                boolean fail = "*".equals(acao.trim())
+                boolean credsFail = "*".equals(acao.trim())
                         && "true".equalsIgnoreCase(creds != null ? creds.trim() : "");
+                List<String> missing = checkBaselineMissing(obs);
+                boolean fail = credsFail || !missing.isEmpty();
+                String actual = missing.isEmpty() ? "All present" : "Missing: " + String.join(", ", missing);
+                if (credsFail) actual += "; ACAO wildcard with credentials=true";
                 results.add(makeResult(corsCreds, obs,
                         fail ? ResultStatus.FAIL : ResultStatus.PASS,
-                        fail ? "ACAO wildcard with credentials=true" : "CORS credentials safe",
-                        corsCreds.expectedResult(),
-                        "ACAO: " + acao + (creds != null ? ", Credentials: " + creds : ""), ""));
+                        fail ? (credsFail ? "ACAO wildcard with credentials=true"
+                                : "Missing: " + String.join(", ", missing))
+                             : "CORS credentials safe",
+                        corsCreds.expectedResult(), actual, ""));
             }
 
             // Exposed headers
             String exposed = obs.headersLower().get("access-control-expose-headers");
-            TestcaseDefinition corsExpose = lookup("TC-CORS-004");
+            TestcaseDefinition corsExpose = lookup("CORS-004");
             if (corsExpose != null && exposed != null) {
                 results.add(evaluateAllBaseline(corsExpose, obs));
             }
@@ -207,23 +212,23 @@ public class PassiveEngine {
             String allowHeaders = obs.headersLower().get("access-control-allow-headers");
             String maxAge = obs.headersLower().get("access-control-max-age");
 
-            TestcaseDefinition corsMethods = lookup("TC-CORS-002");
+            TestcaseDefinition corsMethods = lookup("CORS-002");
             if (corsMethods != null && allowMethods != null) {
                 results.add(evaluateAllBaseline(corsMethods, obs));
             }
-            TestcaseDefinition corsHeaders = lookup("TC-CORS-003");
+            TestcaseDefinition corsHeaders = lookup("CORS-003");
             if (corsHeaders != null && allowHeaders != null) {
                 results.add(evaluateAllBaseline(corsHeaders, obs));
             }
-            TestcaseDefinition corsCache = lookup("TC-CORS-005");
+            TestcaseDefinition corsCache = lookup("CORS-005");
             if (corsCache != null && maxAge != null) {
                 results.add(evaluateAllBaseline(corsCache, obs));
             }
         }
 
-        // Wildcard check — also for TC-EDGE-004
+        // Wildcard check — also for EDGE-004
         if (acao != null && "*".equals(acao.trim())) {
-            TestcaseDefinition tcWild = lookup("TC-EDGE-004");
+            TestcaseDefinition tcWild = lookup("EDGE-004");
             if (tcWild != null) {
                 results.add(makeResult(tcWild, obs, ResultStatus.FAIL,
                         "ACAO wildcard * detected", tcWild.expectedResult(),
@@ -257,29 +262,29 @@ public class PassiveEngine {
     private void evaluateUaChecks(ObservedResponse obs, List<TestcaseResult> results) {
         String ua = obs.requestHeadersLower().get("user-agent");
         if (ua == null) {
-            TestcaseDefinition tc = lookup("TC-UA-006");
+            TestcaseDefinition tc = lookup("UA-006");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
             return;
         }
         if (ua.isEmpty()) {
-            TestcaseDefinition tc = lookup("TC-UA-005");
+            TestcaseDefinition tc = lookup("UA-005");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
             return;
         }
         String uaLower = ua.toLowerCase(Locale.ROOT);
         if (uaLower.contains("mobile") || uaLower.contains("android") || uaLower.contains("iphone")) {
-            TestcaseDefinition tc = lookup("TC-UA-002");
+            TestcaseDefinition tc = lookup("UA-002");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         } else if (uaLower.contains("bot") || uaLower.contains("crawler") || uaLower.contains("spider")
                 || uaLower.contains("googlebot")) {
-            TestcaseDefinition tc = lookup("TC-UA-003");
+            TestcaseDefinition tc = lookup("UA-003");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         } else if (uaLower.contains("curl") || uaLower.contains("wget") || uaLower.contains("python")
                 || uaLower.contains("httpie") || uaLower.contains("postman")) {
-            TestcaseDefinition tc = lookup("TC-UA-004");
+            TestcaseDefinition tc = lookup("UA-004");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         } else {
-            TestcaseDefinition tc = lookup("TC-UA-001");
+            TestcaseDefinition tc = lookup("UA-001");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
     }
@@ -294,21 +299,21 @@ public class PassiveEngine {
                 || reqHeaders.containsKey("sec-fetch-user");
 
         if (!hasAnySecFetch) {
-            TestcaseDefinition tc = lookup("TC-SECFETCH-004");
+            TestcaseDefinition tc = lookup("SECFETCH-004");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
             return;
         }
 
         if ("navigate".equalsIgnoreCase(sfMode)) {
-            TestcaseDefinition tc = lookup("TC-SECFETCH-001");
+            TestcaseDefinition tc = lookup("SECFETCH-001");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
         if ("cors".equalsIgnoreCase(sfMode)) {
-            TestcaseDefinition tc = lookup("TC-SECFETCH-002");
+            TestcaseDefinition tc = lookup("SECFETCH-002");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
         if ("cross-site".equalsIgnoreCase(sfSite) && "iframe".equalsIgnoreCase(sfDest)) {
-            TestcaseDefinition tc = lookup("TC-SECFETCH-003");
+            TestcaseDefinition tc = lookup("SECFETCH-003");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         }
     }
@@ -317,25 +322,25 @@ public class PassiveEngine {
         String referer = obs.requestHeadersLower().get("referer");
 
         if (referer == null) {
-            TestcaseDefinition tc = lookup("TC-REFERER-001");
+            TestcaseDefinition tc = lookup("REFERER-001");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
             return;
         }
         if (referer.isEmpty()) {
-            TestcaseDefinition tc = lookup("TC-REFERER-005");
+            TestcaseDefinition tc = lookup("REFERER-005");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
             return;
         }
         if (referer.contains(obs.host())) {
-            TestcaseDefinition tc = lookup("TC-REFERER-002");
+            TestcaseDefinition tc = lookup("REFERER-002");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
         } else {
-            TestcaseDefinition tc = lookup("TC-REFERER-003");
+            TestcaseDefinition tc = lookup("REFERER-003");
             if (tc != null) results.add(evaluateAllBaseline(tc, obs));
             String refLower = referer.toLowerCase(Locale.ROOT);
             if (refLower.contains("evil") || refLower.contains("malware") || refLower.contains("phish")
                     || refLower.contains("<script") || refLower.contains("javascript:")) {
-                TestcaseDefinition tcSus = lookup("TC-REFERER-004");
+                TestcaseDefinition tcSus = lookup("REFERER-004");
                 if (tcSus != null) results.add(evaluateAllBaseline(tcSus, obs));
             }
         }
@@ -348,11 +353,11 @@ public class PassiveEngine {
         if (xfp != null) {
             String xfpLower = xfp.toLowerCase(Locale.ROOT);
             if ("http".equals(xfpLower)) {
-                evalTc("TC-XFP-001", obs, results);
+                evalTc("XFP-001", obs, results);
             } else if ("https".equals(xfpLower)) {
-                evalTc("TC-XFP-002", obs, results);
+                evalTc("XFP-002", obs, results);
             } else {
-                evalTc("TC-XFP-003", obs, results);
+                evalTc("XFP-003", obs, results);
             }
         }
 
@@ -361,25 +366,25 @@ public class PassiveEngine {
             String xfhLower = xfh.toLowerCase(Locale.ROOT);
             if (xfhLower.contains("localhost") || xfhLower.contains("127.0.0.1")
                     || xfhLower.startsWith("10.") || xfhLower.startsWith("192.168.")) {
-                evalTc("TC-XFH-002", obs, results);
+                evalTc("XFH-002", obs, results);
             } else {
-                evalTc("TC-XFH-001", obs, results);
+                evalTc("XFH-001", obs, results);
             }
         }
 
         String xff = reqHeaders.get("x-forwarded-for");
         if (xff != null) {
             if (xff.contains(",")) {
-                evalTc("TC-XFF-004", obs, results);
+                evalTc("XFF-004", obs, results);
             } else if (xff.contains("127.0.0.1") || xff.contains("::1") || xff.contains("localhost")) {
-                evalTc("TC-XFF-001", obs, results);
+                evalTc("XFF-001", obs, results);
             } else if (xff.startsWith("10.") || xff.startsWith("192.168.")
                     || xff.startsWith("172.16.") || xff.startsWith("172.17.")
                     || xff.startsWith("172.18.") || xff.startsWith("172.19.")
                     || xff.startsWith("172.2") || xff.startsWith("172.3")) {
-                evalTc("TC-XFF-002", obs, results);
+                evalTc("XFF-002", obs, results);
             } else {
-                evalTc("TC-XFF-003", obs, results);
+                evalTc("XFF-003", obs, results);
             }
         }
     }
@@ -387,25 +392,25 @@ public class PassiveEngine {
     private void evaluateCookieAuthChecks(ObservedResponse obs, List<TestcaseResult> results) {
         String cookie = obs.requestHeadersLower().get("cookie");
         if (cookie == null) {
-            evalTc("TC-COOKIE-001", obs, results);
+            evalTc("COOKIE-001", obs, results);
         }
-        // TC-COOKIE-002 through 005 and TC-AUTH-* are primarily active tests
+        // COOKIE-002 through 005 and AUTH-* are primarily active tests
         // Passive: just check baseline on auth-looking responses
         String path = obs.pathAndQuery().toLowerCase(Locale.ROOT);
         if (path.contains("/login") || path.contains("/auth") || path.contains("/oauth")
                 || path.contains("/callback") || path.contains("/sso")) {
-            evalTc("TC-AUTH-001", obs, results);
+            evalTc("AUTH-001", obs, results);
         }
         if (path.contains("/logout") || path.contains("/signout")) {
-            evalTc("TC-AUTH-003", obs, results);
+            evalTc("AUTH-003", obs, results);
         }
     }
 
     private void evaluateEdgeChecks(ObservedResponse obs, List<TestcaseResult> results) {
         Map<String, List<String>> multi = obs.headerMultiLower();
 
-        // TC-EDGE-001: Duplicate security headers
-        TestcaseDefinition tcDup = lookup("TC-EDGE-001");
+        // EDGE-001: Duplicate security headers
+        TestcaseDefinition tcDup = lookup("EDGE-001");
         if (tcDup != null) {
             List<String> duplicates = new ArrayList<>();
             for (String h : BASELINE_HEADERS) {
@@ -428,14 +433,14 @@ public class PassiveEngine {
                     duplicates.isEmpty() ? "No duplicates" : String.join("; ", duplicates), ""));
         }
 
-        // TC-EDGE-003: Exact value and syntax
-        TestcaseDefinition tcSyntax = lookup("TC-EDGE-003");
+        // EDGE-003: Exact value and syntax
+        TestcaseDefinition tcSyntax = lookup("EDGE-003");
         if (tcSyntax != null) {
             results.add(evaluateExactBaseline(tcSyntax, obs));
         }
 
-        // TC-EDGE-004: Wildcard checks
-        TestcaseDefinition tcWild = lookup("TC-EDGE-004");
+        // EDGE-004: Wildcard checks
+        TestcaseDefinition tcWild = lookup("EDGE-004");
         if (tcWild != null) {
             String acao = obs.headersLower().get("access-control-allow-origin");
             String csp = obs.headersLower().get("content-security-policy");
@@ -449,9 +454,9 @@ public class PassiveEngine {
                     issues.isEmpty() ? "No wildcards" : String.join("; ", issues), ""));
         }
 
-        // TC-EDGE-005: Error-page duplicate/conflict
+        // EDGE-005: Error-page duplicate/conflict
         if (obs.statusCode() >= 400) {
-            TestcaseDefinition tcErr = lookup("TC-EDGE-005");
+            TestcaseDefinition tcErr = lookup("EDGE-005");
             if (tcErr != null) {
                 List<String> dups = new ArrayList<>();
                 for (String h : BASELINE_HEADERS) {
