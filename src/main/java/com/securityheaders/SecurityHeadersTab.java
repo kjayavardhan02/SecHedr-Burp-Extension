@@ -116,6 +116,7 @@ public class SecurityHeadersTab extends JPanel {
 
     // Catalog filter
     private JTextField catalogSearchField;
+    private JComboBox<String> catalogCategoryCombo;
 
     private JLabel statusLabel;
     private JLabel monitorLabel;
@@ -1269,9 +1270,10 @@ public class SecurityHeadersTab extends JPanel {
 
         JTable table = new JTable(tcTableModel);
         styleTable(table);
-        applyTestcaseHeaderRenderer(table, 6, 10);
-        applyTestcaseHeaderRenderer(table, 12, 12);
+        applyTestcaseHeaderRenderer(table, 6, 9);
+        applyTcAcaoColumnRenderer(table, 10);
         applyTcAcaoChecksRenderer(table, 11);
+        applyTestcaseHeaderRenderer(table, 12, 12);
         applyCenterRenderer(table, 4);
         applyCenterRenderer(table, 5);
 
@@ -1408,7 +1410,7 @@ public class SecurityHeadersTab extends JPanel {
 
             TestcaseResult r = data.get(modelRow);
 
-            String reqText = r.requestData();
+            String reqText = headersOnly(r.requestData());
             String respText = headersOnly(r.responseData());
             requestArea.setText(reqText != null ? reqText : "(No request data captured)");
             responseArea.setText(respText != null ? respText : "(No response data captured)");
@@ -1713,6 +1715,7 @@ public class SecurityHeadersTab extends JPanel {
         JButton catalogClearBtn = pill("Show All", new Color(60, 64, 76), new Color(75, 80, 94));
         catalogClearBtn.addActionListener(e -> {
             catalogSearchField.setText("");
+            catalogCategoryCombo.setSelectedIndex(0);
             applyCatalogSearch();
         });
         toolbar.add(catalogClearBtn);
@@ -1737,44 +1740,22 @@ public class SecurityHeadersTab extends JPanel {
             statusLabel.setForeground(RED_FG);
         });
 
-        JComboBox<String> catFilterCombo = darkCombo(new String[]{"None"});
+        catalogCategoryCombo = darkCombo(new String[]{"All"});
+        JComboBox<String> catFilterCombo = catalogCategoryCombo;
         Set<String> cats = new TreeSet<>();
         for (TestcaseDefinition td : library.getAll()) {
             if (!td.category().isEmpty()) cats.add(td.category());
         }
         cats.forEach(catFilterCombo::addItem);
-
-        JButton selectCat = pill("Select Category", ACCENT, ACCENT_H);
-        selectCat.addActionListener(e -> {
-            String cat = (String) catFilterCombo.getSelectedItem();
-            if (cat == null || "None".equals(cat)) return;
-            for (TestcaseDefinition td : library.getAll()) {
-                if (td.category().equals(cat)) selector.setEnabled(td.id(), true);
-            }
-            catalogModel.fireTableDataChanged();
-            statusLabel.setText("Enabled all " + cat + " testcases");
-            statusLabel.setForeground(ACCENT);
+        catFilterCombo.addItemListener(e -> {
+            if (e.getStateChange() == ItemEvent.SELECTED) applyCatalogFilter(catFilterCombo);
         });
 
-        JButton deselectCat = pill("Deselect Category", new Color(60, 64, 76), new Color(75, 80, 94));
-        deselectCat.addActionListener(e -> {
-            String cat = (String) catFilterCombo.getSelectedItem();
-            if (cat == null || "None".equals(cat)) return;
-            for (TestcaseDefinition td : library.getAll()) {
-                if (td.category().equals(cat)) selector.setEnabled(td.id(), false);
-            }
-            catalogModel.fireTableDataChanged();
-            statusLabel.setText("Disabled all " + cat + " testcases");
-            statusLabel.setForeground(RED_FG);
-        });
-
-        toolbar.add(selectAll);
-        toolbar.add(deselectAll);
-        toolbar.add(Box.createHorizontalStrut(12));
         toolbar.add(label("Category"));
         toolbar.add(catFilterCombo);
-        toolbar.add(selectCat);
-        toolbar.add(deselectCat);
+        toolbar.add(Box.createHorizontalStrut(12));
+        toolbar.add(selectAll);
+        toolbar.add(deselectAll);
 
         JTable table = new JTable(catalogModel);
         styleTable(table);
@@ -1863,18 +1844,20 @@ public class SecurityHeadersTab extends JPanel {
             this.selector = selector;
         }
 
-        void applyFilter(String search) {
-            if (search == null || search.isBlank()) {
-                filtered = allTcs;
-            } else {
-                String lower = search.trim().toLowerCase();
-                filtered = allTcs.stream().filter(td ->
-                        td.id().toLowerCase().contains(lower)
+        void applyFilter(String search, String category) {
+            filtered = allTcs.stream().filter(td -> {
+                if (category != null && !"All".equals(category)) {
+                    if (!td.category().equals(category)) return false;
+                }
+                if (search != null && !search.isBlank()) {
+                    String lower = search.trim().toLowerCase();
+                    return td.id().toLowerCase().contains(lower)
                         || td.name().toLowerCase().contains(lower)
                         || td.description().toLowerCase().contains(lower)
-                        || td.category().toLowerCase().contains(lower)
-                ).collect(Collectors.toList());
-            }
+                        || td.category().toLowerCase().contains(lower);
+                }
+                return true;
+            }).collect(Collectors.toList());
             fireTableDataChanged();
         }
 
@@ -2415,7 +2398,13 @@ public class SecurityHeadersTab extends JPanel {
     }
 
     private void applyCatalogSearch() {
-        catalogModel.applyFilter(catalogSearchField.getText());
+        String cat = (String) catalogCategoryCombo.getSelectedItem();
+        catalogModel.applyFilter(catalogSearchField.getText(), cat);
+    }
+
+    private void applyCatalogFilter(JComboBox<String> combo) {
+        String cat = (String) combo.getSelectedItem();
+        catalogModel.applyFilter(catalogSearchField.getText(), cat);
     }
 
     private FilterState buildRawFilterState() {
@@ -2666,6 +2655,30 @@ public class SecurityHeadersTab extends JPanel {
         for (int i = from; i <= to; i++) {
             table.getColumnModel().getColumn(i).setCellRenderer(r);
         }
+    }
+
+    private void applyTcAcaoColumnRenderer(JTable table, int col) {
+        DefaultTableCellRenderer r = new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int column) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, column);
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                l.setOpaque(true);
+                l.setFont(new Font("SansSerif", Font.BOLD, 12));
+                l.setBorder(new EmptyBorder(4, 4, 4, 4));
+                if (!sel && val instanceof String s) {
+                    switch (s) {
+                        case "PASS", "PRESENT" -> { l.setBackground(GREEN_BG); l.setForeground(GREEN_FG); }
+                        case "FAIL" -> { l.setBackground(RED_BG); l.setForeground(RED_FG); }
+                        case "MISSING" -> { l.setBackground(ORANGE_BG); l.setForeground(ORANGE_FG); }
+                        case "COVERED", "ERROR", "INCONCLUSIVE" -> { l.setBackground(WARN_BG); l.setForeground(WARN_FG); }
+                        default -> { l.setBackground(row % 2 == 0 ? TBL_EVEN : TBL_ODD); l.setForeground(TXT_M); }
+                    }
+                } else if (sel) { l.setBackground(TBL_SEL); l.setForeground(TXT); }
+                return l;
+            }
+        };
+        table.getColumnModel().getColumn(col).setCellRenderer(r);
     }
 
     private void applyCenterRenderer(JTable table, int col) {

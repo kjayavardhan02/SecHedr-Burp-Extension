@@ -220,12 +220,15 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
         if (actualLower.startsWith("missing:") || actualLower.contains("missing:")) {
             String missingPart = actualLower.contains("missing:") ?
                     actualLower.substring(actualLower.indexOf("missing:") + "missing:".length()) : actualLower;
-            return missingPart.contains(HEADER_KEYS[headerIdx]) ? "FAIL" : "PASS";
+            if (missingPart.contains(HEADER_KEYS[headerIdx])) {
+                return headerIdx == 4 ? "MISSING" : "FAIL";
+            }
+            return "PASS";
         }
 
         // Check if specific header is mentioned in issues
         if (actualLower.contains(HEADER_KEYS[headerIdx])) {
-            return "FAIL";
+            return headerIdx == 4 ? "MISSING" : "FAIL";
         }
 
         // For ACAO-specific results in ACAO column
