@@ -416,7 +416,7 @@ public class SecurityHeadersTab extends JPanel {
         kpiRow.add(summaryCard("Assessed", dashAssessed, ACCENT));
         kpiRow.add(summaryCard("Testcases", dashTestcases, GREEN_FG));
         kpiRow.add(summaryCard("Missing", dashMissing, RED_FG));
-        kpiRow.add(summaryCard("Errors", dashErrors, RED_FG));
+        kpiRow.add(summaryCard("TC Errors / Inconclusive", dashErrors, RED_FG));
 
         dash.add(kpiRow);
         dash.add(Box.createVerticalStrut(24));
@@ -517,7 +517,7 @@ public class SecurityHeadersTab extends JPanel {
         healthRow.add(summaryCard("Heap Used", dashHeap, WARN_FG));
         healthRow.add(summaryCard("Elapsed", dashElapsed, TXT2));
         healthRow.add(summaryCard("Last Activity", dashLastUpdate, TXT2));
-        healthRow.add(summaryCard("TC Errors", dashTcErrors, RED_FG));
+        healthRow.add(summaryCard("Scan Failures", dashTcErrors, RED_FG));
 
         dash.add(healthRow);
 
