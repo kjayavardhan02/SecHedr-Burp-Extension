@@ -71,11 +71,22 @@ public class SecurityHeadersTab extends JPanel {
 
     // Dashboard header coverage
     private static final String[] COV_LABELS = {"HSTS", "Cache-Control", "X-Frame-Options", "X-Content-Type-Options", "ACAO", "CSP"};
+    private static final String[] COV_HEADER_KEYS = {
+        "strict-transport-security", "cache-control", "x-frame-options",
+        "x-content-type-options", "access-control-allow-origin", "content-security-policy"
+    };
     private final JPanel[] dashCovBars = new JPanel[6];
     private final JLabel[] dashCovPcts = new JLabel[6];
     private final JLabel[] dashCovStats = new JLabel[6];
     private final int[] dashCovPresent = new int[6];
     private final int[] dashCovTotal = new int[6];
+
+    // Dashboard testcase header coverage
+    private final JPanel[] dashTcCovBars = new JPanel[6];
+    private final JLabel[] dashTcCovPcts = new JLabel[6];
+    private final JLabel[] dashTcCovStats = new JLabel[6];
+    private final int[] dashTcCovPresent = new int[6];
+    private final int[] dashTcCovTotal = new int[6];
 
     // Dashboard security posture
     private JLabel dashAffected, dashCompliant, dashCompliance, dashNoHeaders;
@@ -425,19 +436,17 @@ public class SecurityHeadersTab extends JPanel {
         dash.add(dashSectionLabel("HEADER COVERAGE"));
         dash.add(Box.createVerticalStrut(6));
 
-        JPanel covPanel = new JPanel();
-        covPanel.setLayout(new BoxLayout(covPanel, BoxLayout.Y_AXIS));
-        covPanel.setOpaque(false);
-        covPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JPanel covSplitPanel = new JPanel(new GridLayout(1, 2, 12, 0));
+        covSplitPanel.setOpaque(false);
+        covSplitPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        for (int i = 0; i < 6; i++) {
-            dashCovPcts[i] = new JLabel("—");
-            dashCovStats[i] = new JLabel("0 / 0");
-            covPanel.add(createCoverageRow(COV_LABELS[i], i));
-            if (i < 5) covPanel.add(Box.createVerticalStrut(3));
-        }
-        covPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, covPanel.getPreferredSize().height + 20));
-        dash.add(covPanel);
+        covSplitPanel.add(createCoverageCard("RAW RESULTS", dashCovBars, dashCovPcts,
+                dashCovStats, dashCovPresent, dashCovTotal, true));
+        covSplitPanel.add(createCoverageCard("TESTCASE RESULTS", dashTcCovBars, dashTcCovPcts,
+                dashTcCovStats, dashTcCovPresent, dashTcCovTotal, false));
+
+        covSplitPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 260));
+        dash.add(covSplitPanel);
         dash.add(Box.createVerticalStrut(24));
 
         // ── Security Posture ──
@@ -535,19 +544,51 @@ public class SecurityHeadersTab extends JPanel {
         return wrapper;
     }
 
-    private JPanel createCoverageRow(String headerName, int index) {
-        JPanel row = new JPanel(new BorderLayout(8, 0));
-        row.setBackground(BG_ELEV);
-        row.setBorder(BorderFactory.createCompoundBorder(
+    private JPanel createCoverageCard(String title, JPanel[] bars, JLabel[] pcts, JLabel[] stats,
+                                       int[] present, int[] total, boolean isRaw) {
+        JPanel card = new JPanel();
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBackground(BG_ELEV);
+        card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BORDER_S),
-                new EmptyBorder(5, 12, 5, 12)));
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+                new EmptyBorder(8, 10, 8, 10)));
+
+        Color titleColor = isRaw ? ACCENT : GREEN_FG;
+        JLabel titleLabel = new JLabel("  " + title);
+        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
+        titleLabel.setForeground(titleColor);
+        titleLabel.setOpaque(true);
+        titleLabel.setBackground(BG2);
+        titleLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 2, 0, 0, titleColor),
+                new EmptyBorder(4, 8, 4, 8)));
+        titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        titleLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 24));
+        card.add(titleLabel);
+        card.add(Box.createVerticalStrut(6));
+
+        for (int i = 0; i < 6; i++) {
+            pcts[i] = new JLabel("—");
+            stats[i] = new JLabel("0 / 0");
+            card.add(createCoverageRowGeneric(COV_LABELS[i], i, bars, pcts, stats, present, total, isRaw));
+            if (i < 5) card.add(Box.createVerticalStrut(2));
+        }
+        return card;
+    }
+
+    private JPanel createCoverageRowGeneric(String headerName, int index,
+                                             JPanel[] bars, JLabel[] pcts, JLabel[] stats,
+                                             int[] present, int[] total, boolean isRaw) {
+        JPanel row = new JPanel(new BorderLayout(6, 0));
+        row.setBackground(BG2);
+        row.setBorder(new EmptyBorder(3, 8, 3, 8));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel name = new JLabel(headerName);
-        name.setFont(new Font("SansSerif", Font.BOLD, 12));
+        name.setFont(new Font("SansSerif", Font.PLAIN, 11));
         name.setForeground(TXT);
-        name.setPreferredSize(new Dimension(180, 20));
+        name.setPreferredSize(new Dimension(140, 18));
 
         final int idx = index;
         JPanel barTrack = new JPanel() {
@@ -557,12 +598,12 @@ public class SecurityHeadersTab extends JPanel {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g2.setColor(BORDER);
                 g2.fillRoundRect(0, 2, getWidth(), getHeight() - 4, 6, 6);
-                int total = dashCovTotal[idx];
-                int present = dashCovPresent[idx];
-                if (total > 0 && present > 0) {
-                    int pct = present * 100 / total;
-                    int barWidth = Math.max(4, (int) ((double) present / total * getWidth()));
-                    Color barColor = pct >= 80 ? GREEN_FG : pct >= 50 ? WARN_FG : RED_FG;
+                int t = total[idx];
+                int p = present[idx];
+                if (t > 0 && p > 0) {
+                    int pctVal = p * 100 / t;
+                    int barWidth = Math.max(4, (int) ((double) p / t * getWidth()));
+                    Color barColor = pctVal >= 80 ? GREEN_FG : pctVal >= 50 ? WARN_FG : RED_FG;
                     g2.setColor(barColor);
                     g2.fillRoundRect(0, 2, barWidth, getHeight() - 4, 6, 6);
                 }
@@ -570,38 +611,39 @@ public class SecurityHeadersTab extends JPanel {
             }
         };
         barTrack.setOpaque(false);
-        barTrack.setPreferredSize(new Dimension(200, 18));
-        dashCovBars[index] = barTrack;
+        barTrack.setPreferredSize(new Dimension(150, 16));
+        bars[index] = barTrack;
 
-        dashCovPcts[index].setFont(new Font("SansSerif", Font.BOLD, 12));
-        dashCovPcts[index].setForeground(TXT);
-        dashCovPcts[index].setHorizontalAlignment(SwingConstants.RIGHT);
-        dashCovPcts[index].setPreferredSize(new Dimension(50, 20));
+        pcts[index].setFont(new Font("SansSerif", Font.BOLD, 11));
+        pcts[index].setForeground(TXT);
+        pcts[index].setHorizontalAlignment(SwingConstants.RIGHT);
+        pcts[index].setPreferredSize(new Dimension(40, 18));
 
-        dashCovStats[index].setFont(new Font("SansSerif", Font.PLAIN, 12));
-        dashCovStats[index].setForeground(TXT2);
-        dashCovStats[index].setHorizontalAlignment(SwingConstants.RIGHT);
-        dashCovStats[index].setPreferredSize(new Dimension(90, 20));
+        stats[index].setFont(new Font("SansSerif", Font.PLAIN, 10));
+        stats[index].setForeground(TXT2);
+        stats[index].setHorizontalAlignment(SwingConstants.RIGHT);
+        stats[index].setPreferredSize(new Dimension(70, 18));
 
-        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         rightPanel.setOpaque(false);
-        rightPanel.add(dashCovPcts[index]);
-        rightPanel.add(dashCovStats[index]);
+        rightPanel.add(pcts[index]);
+        rightPanel.add(stats[index]);
 
         row.add(name, BorderLayout.WEST);
         row.add(barTrack, BorderLayout.CENTER);
         row.add(rightPanel, BorderLayout.EAST);
 
         row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        final int tabIndex = isRaw ? 1 : 6;
         row.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
                 if (mainTabs != null) {
-                    mainTabs.setSelectedIndex(1);
-                    rawHeaderCombo.setSelectedIndex(idx + 3);
+                    mainTabs.setSelectedIndex(tabIndex);
+                    if (isRaw) rawHeaderCombo.setSelectedIndex(idx + 3);
                 }
             }
-            @Override public void mouseEntered(MouseEvent e) { row.setBackground(BG2); }
-            @Override public void mouseExited(MouseEvent e) { row.setBackground(BG_ELEV); }
+            @Override public void mouseEntered(MouseEvent e) { row.setBackground(BG_ELEV); }
+            @Override public void mouseExited(MouseEvent e) { row.setBackground(BG2); }
         });
 
         return row;
@@ -661,6 +703,28 @@ public class SecurityHeadersTab extends JPanel {
             dashCovPcts[i].setText(pct + "%");
             dashCovStats[i].setText(present[i] + " / " + total);
             dashCovBars[i].repaint();
+        }
+
+        // Testcase header coverage — parse responseData for header presence
+        int[] tcPresent = new int[6];
+        int tcCovCount = 0;
+        for (TestcaseResult tr : tcAll) {
+            if (tr.status() == ResultStatus.ERROR || tr.status() == ResultStatus.INCONCLUSIVE) continue;
+            String resp = tr.responseData();
+            if (resp == null || resp.isEmpty()) continue;
+            tcCovCount++;
+            String respLower = resp.toLowerCase(java.util.Locale.ROOT);
+            for (int i = 0; i < 6; i++) {
+                if (respLower.contains("\n" + COV_HEADER_KEYS[i] + ":")) tcPresent[i]++;
+            }
+        }
+        for (int i = 0; i < 6; i++) {
+            dashTcCovPresent[i] = tcPresent[i];
+            dashTcCovTotal[i] = tcCovCount;
+            int pctTc = tcCovCount > 0 ? tcPresent[i] * 100 / tcCovCount : 0;
+            dashTcCovPcts[i].setText(pctTc + "%");
+            dashTcCovStats[i].setText(tcPresent[i] + " / " + tcCovCount);
+            dashTcCovBars[i].repaint();
         }
 
         // Security Posture
@@ -777,6 +841,9 @@ public class SecurityHeadersTab extends JPanel {
         applyCenterRenderer(table, 1);
         applyCenterRenderer(table, 3);
         applyAcaoChecksRenderer(table, 9);
+        applyCenterRenderer(table, 11);
+        applyCenterRenderer(table, 12);
+        applyCenterRenderer(table, 13);
 
         JScrollPane tableSp = new JScrollPane(table);
         tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
@@ -1504,6 +1571,9 @@ public class SecurityHeadersTab extends JPanel {
         applyCenterRenderer(table, 1);
         applyCenterRenderer(table, 3);
         applyAcaoChecksRenderer(table, 9);
+        applyCenterRenderer(table, 11);
+        applyCenterRenderer(table, 12);
+        applyCenterRenderer(table, 13);
 
         JScrollPane tableSp = new JScrollPane(table);
         tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
@@ -2292,12 +2362,20 @@ public class SecurityHeadersTab extends JPanel {
 
         applyTcFilters();
         refreshDashboard();
+
+        // Update TC columns in Raw Results and Repeater tables
+        List<TestcaseResult> tcAll = tcResultStore.getAll();
+        rawTableModel.setTestcaseCounts(tcAll, library.size(), library);
+        rawTableModel.fireTableDataChanged();
+        repeaterTableModel.setTestcaseCounts(tcAll, library.size(), library);
+        repeaterTableModel.fireTableDataChanged();
     }
 
     private void applyRawFilters() {
         List<HeaderResult> all = resultStore.getAll();
         FilterState fs = buildRawFilterState();
         currentFiltered = filterService.apply(all, fs);
+        rawTableModel.setTestcaseCounts(tcResultStore.getAll(), library.size(), library);
         rawTableModel.setData(currentFiltered);
         rawFilterIndicator.setText(fs.isActive() ? "Filtered" : "");
     }
@@ -2306,6 +2384,7 @@ public class SecurityHeadersTab extends JPanel {
         List<HeaderResult> all = repeaterResultStore.getAll();
         FilterState fs = buildRepeaterFilterState();
         currentRepFiltered = filterService.apply(all, fs);
+        repeaterTableModel.setTestcaseCounts(tcResultStore.getAll(), library.size(), library);
         repeaterTableModel.setData(currentRepFiltered);
         repFilterIndicator.setText(fs.isActive() ? "Filtered" : "");
     }
