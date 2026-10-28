@@ -71,23 +71,23 @@ public class SecurityHeadersTab extends JPanel {
     private JLabel dashHosts, dashEndpoints, dashAssessed, dashTestcases, dashMissing, dashErrors;
 
     // Dashboard header coverage
-    private static final String[] COV_LABELS = {"HSTS", "Cache-Control", "X-Frame-Options", "X-Content-Type-Options", "ACAO", "CSP"};
+    private static final String[] COV_LABELS = {"HSTS", "Cache-Control", "X-Frame-Options", "X-Content-Type-Options", "ACAO", "ACAO Checks", "CSP"};
     private static final String[] COV_HEADER_KEYS = {
         "strict-transport-security", "cache-control", "x-frame-options",
-        "x-content-type-options", "access-control-allow-origin", "content-security-policy"
+        "x-content-type-options", "access-control-allow-origin", "access-control-allow-origin", "content-security-policy"
     };
-    private final JPanel[] dashCovBars = new JPanel[6];
-    private final JLabel[] dashCovPcts = new JLabel[6];
-    private final JLabel[] dashCovStats = new JLabel[6];
-    private final int[] dashCovPresent = new int[6];
-    private final int[] dashCovTotal = new int[6];
+    private final JPanel[] dashCovBars = new JPanel[7];
+    private final JLabel[] dashCovPcts = new JLabel[7];
+    private final JLabel[] dashCovStats = new JLabel[7];
+    private final int[] dashCovPresent = new int[7];
+    private final int[] dashCovTotal = new int[7];
 
     // Dashboard testcase header coverage
-    private final JPanel[] dashTcCovBars = new JPanel[6];
-    private final JLabel[] dashTcCovPcts = new JLabel[6];
-    private final JLabel[] dashTcCovStats = new JLabel[6];
-    private final int[] dashTcCovPresent = new int[6];
-    private final int[] dashTcCovTotal = new int[6];
+    private final JPanel[] dashTcCovBars = new JPanel[7];
+    private final JLabel[] dashTcCovPcts = new JLabel[7];
+    private final JLabel[] dashTcCovStats = new JLabel[7];
+    private final int[] dashTcCovPresent = new int[7];
+    private final int[] dashTcCovTotal = new int[7];
 
     // Dashboard security posture
     private JLabel dashAffected, dashCompliant, dashCompliance, dashNoHeaders;
@@ -582,11 +582,11 @@ public class SecurityHeadersTab extends JPanel {
         card.add(titleLabel);
         card.add(Box.createVerticalStrut(6));
 
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 7; i++) {
             pcts[i] = new JLabel("—");
             stats[i] = new JLabel("0 / 0");
             card.add(createCoverageRowGeneric(COV_LABELS[i], i, bars, pcts, stats, present, total, isRaw));
-            if (i < 5) card.add(Box.createVerticalStrut(2));
+            if (i < 6) card.add(Box.createVerticalStrut(2));
         }
         return card;
     }
@@ -685,7 +685,15 @@ public class SecurityHeadersTab extends JPanel {
         Set<String> hosts = new HashSet<>();
         Set<String> endpoints = new HashSet<>();
         int missingTotal = 0;
-        int hstsP = 0, ccP = 0, xfoP = 0, xctoP = 0, acaoP = 0, cspP = 0;
+        int hstsP = 0, ccP = 0, xfoP = 0, xctoP = 0, acaoP = 0, acaoChkP = 0, acaoWithHeader = 0, cspP = 0;
+
+        PolicyProfile activePolicy = policyStore.getActive();
+        String[] policyHeaders = {
+            "strict-transport-security", "cache-control", "x-frame-options",
+            "x-content-type-options", "access-control-allow-origin", null, "content-security-policy"
+        };
+        int[] policyCov = new int[7];
+        int[] policyTotal = new int[7];
 
         for (HeaderResult r : all) {
             hosts.add(r.host());
@@ -695,8 +703,23 @@ public class SecurityHeadersTab extends JPanel {
             if (r.cacheControlPresent()) ccP++;
             if (r.xfoPresent() || r.xfoCoveredByCsp()) xfoP++;
             if (r.xctoPresent()) xctoP++;
-            if (r.acaoPresent()) acaoP++;
+            if (r.acaoPresent()) {
+                acaoP++;
+                acaoWithHeader++;
+                if (!r.acaoCheckFailed()) acaoChkP++;
+            }
             if (r.cspPresent()) cspP++;
+
+            if (activePolicy != null) {
+                PolicyEvaluationResult eval = policyEvaluator.evaluate(r, activePolicy);
+                for (PolicyRuleResult rr : eval.ruleResults()) {
+                    int idx = headerPolicyIndex(rr.headerName());
+                    if (idx < 0) continue;
+                    if (rr.status() == PolicyComplianceStatus.NA) continue;
+                    policyTotal[idx]++;
+                    if (rr.status() == PolicyComplianceStatus.PASS) policyCov[idx]++;
+                }
+            }
         }
 
         List<TestcaseResult> tcAll = tcResultStore.getAll();
@@ -710,41 +733,109 @@ public class SecurityHeadersTab extends JPanel {
         dashMissing.setText(String.valueOf(missingTotal));
         dashErrors.setText(String.valueOf(tcErrors));
 
-        int[] present = {hstsP, ccP, xfoP, xctoP, acaoP, cspP};
-        for (int i = 0; i < 6; i++) {
-            dashCovPresent[i] = present[i];
-            dashCovTotal[i] = total;
-            int pct = total > 0 ? present[i] * 100 / total : 0;
+        int[] present = {hstsP, ccP, xfoP, xctoP, acaoP, acaoChkP, cspP};
+        int[] presentTotal = {total, total, total, total, total, acaoWithHeader, total};
+        for (int i = 0; i < 7; i++) {
+            if (policyHeaders[i] != null && activePolicy != null
+                    && activePolicy.rules().containsKey(policyHeaders[i])
+                    && activePolicy.rules().get(policyHeaders[i]).enabled()) {
+                dashCovPresent[i] = policyCov[i];
+                dashCovTotal[i] = policyTotal[i];
+            } else {
+                dashCovPresent[i] = present[i];
+                dashCovTotal[i] = presentTotal[i];
+            }
+            int covTotal = dashCovTotal[i];
+            int covPresent = dashCovPresent[i];
+            int pct = covTotal > 0 ? covPresent * 100 / covTotal : 0;
             dashCovPcts[i].setText(pct + "%");
-            dashCovStats[i].setText(present[i] + " / " + total);
+            dashCovStats[i].setText(covPresent + " / " + covTotal);
             dashCovBars[i].repaint();
         }
 
         // Testcase header coverage — parse responseData for header presence
-        int[] tcPresent = new int[6];
+        int[] tcPresent = new int[7];
         int tcCovCount = 0;
+        int tcAcaoWithHeader = 0;
         for (TestcaseResult tr : tcAll) {
             if (tr.status() == ResultStatus.ERROR || tr.status() == ResultStatus.INCONCLUSIVE) continue;
             String resp = tr.responseData();
             if (resp == null || resp.isEmpty()) continue;
             tcCovCount++;
             String respLower = resp.toLowerCase(java.util.Locale.ROOT);
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < 5; i++) {
                 if (respLower.contains("\n" + COV_HEADER_KEYS[i] + ":")) tcPresent[i]++;
             }
+            // index 5 = ACAO Checks
+            if (respLower.contains("\naccess-control-allow-origin:")) {
+                tcAcaoWithHeader++;
+                String headersPart = resp.contains("\r\n\r\n")
+                        ? resp.substring(0, resp.indexOf("\r\n\r\n"))
+                        : (resp.contains("\n\n") ? resp.substring(0, resp.indexOf("\n\n")) : resp);
+                boolean acaoCheckPass = true;
+                String acaoVal = null;
+                for (String line : headersPart.split("\\r?\\n")) {
+                    if (line.toLowerCase(java.util.Locale.ROOT).startsWith("access-control-allow-origin:")) {
+                        acaoVal = line.substring("access-control-allow-origin:".length()).trim();
+                        break;
+                    }
+                }
+                if (acaoVal != null) {
+                    if ("*".equals(acaoVal) || "null".equalsIgnoreCase(acaoVal)) {
+                        acaoCheckPass = false;
+                    } else {
+                        String reqData = tr.requestData();
+                        if (reqData != null && !reqData.isEmpty()) {
+                            String originVal = null;
+                            String hostVal = null;
+                            String reqHeaders = reqData.contains("\r\n\r\n")
+                                    ? reqData.substring(0, reqData.indexOf("\r\n\r\n"))
+                                    : (reqData.contains("\n\n") ? reqData.substring(0, reqData.indexOf("\n\n")) : reqData);
+                            for (String line : reqHeaders.split("\\r?\\n")) {
+                                String lower = line.toLowerCase(java.util.Locale.ROOT);
+                                if (lower.startsWith("origin:") && originVal == null) {
+                                    originVal = line.substring("origin:".length()).trim();
+                                } else if (lower.startsWith("host:") && hostVal == null) {
+                                    hostVal = line.substring("host:".length()).trim();
+                                }
+                            }
+                            if (originVal != null && !originVal.isEmpty()
+                                    && acaoVal.equalsIgnoreCase(originVal)) {
+                                acaoCheckPass = isSameOriginReflectionStatic(acaoVal, hostVal);
+                            }
+                        }
+                    }
+                }
+                if (acaoCheckPass) tcPresent[5]++;
+            }
+            // index 6 = CSP
+            if (respLower.contains("\ncontent-security-policy:")) tcPresent[6]++;
         }
-        for (int i = 0; i < 6; i++) {
+        int[] tcTotals = {tcCovCount, tcCovCount, tcCovCount, tcCovCount, tcCovCount, tcAcaoWithHeader, tcCovCount};
+        for (int i = 0; i < 7; i++) {
             dashTcCovPresent[i] = tcPresent[i];
-            dashTcCovTotal[i] = tcCovCount;
-            int pctTc = tcCovCount > 0 ? tcPresent[i] * 100 / tcCovCount : 0;
+            dashTcCovTotal[i] = tcTotals[i];
+            int covT = tcTotals[i];
+            int pctTc = covT > 0 ? tcPresent[i] * 100 / covT : 0;
             dashTcCovPcts[i].setText(pctTc + "%");
-            dashTcCovStats[i].setText(tcPresent[i] + " / " + tcCovCount);
+            dashTcCovStats[i].setText(tcPresent[i] + " / " + covT);
             dashTcCovBars[i].repaint();
         }
 
         // Security Posture
-        int totalChecks = total * 6;
-        int passedChecks = hstsP + ccP + xfoP + xctoP + acaoP + cspP;
+        int totalChecks;
+        int passedChecks;
+        if (activePolicy != null) {
+            totalChecks = 0;
+            passedChecks = 0;
+            for (int i = 0; i < 7; i++) {
+                totalChecks += policyTotal[i];
+                passedChecks += policyCov[i];
+            }
+        } else {
+            totalChecks = total * 5 + acaoWithHeader + total;
+            passedChecks = hstsP + ccP + xfoP + xctoP + acaoP + acaoChkP + cspP;
+        }
         int affected = 0;
         int compliant = 0;
         for (HeaderResult r : all) {
@@ -1457,10 +1548,11 @@ public class SecurityHeadersTab extends JPanel {
         applyCenterRenderer(table, 1);
         applyCenterRenderer(table, 3);
         applyAcaoChecksRenderer(table, 9);
-        applyCenterRenderer(table, 11);
-        applyCenterRenderer(table, 12);
-        applyCenterRenderer(table, 13);
         applyComplianceRenderer(table, 14);
+        // Hide TC columns (remove in reverse order to preserve indices)
+        for (int col : new int[]{13, 12, 11}) {
+            table.removeColumn(table.getColumnModel().getColumn(col));
+        }
 
         JScrollPane tableSp = new JScrollPane(table);
         tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
@@ -1471,6 +1563,14 @@ public class SecurityHeadersTab extends JPanel {
         // Request/Response detail
         JTextArea requestArea = darkTextArea();
         JTextArea responseArea = darkTextArea();
+
+        JEditorPane repPolicyDetailArea = new JEditorPane();
+        repPolicyDetailArea.setContentType("text/html");
+        repPolicyDetailArea.setEditable(false);
+        repPolicyDetailArea.setBackground(BG_INPUT);
+        repPolicyDetailArea.setForeground(TXT);
+        repPolicyDetailArea.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+        repPolicyDetailArea.setFont(new Font("SansSerif", Font.PLAIN, 13));
 
         JPanel reqPanel = new JPanel(new BorderLayout());
         reqPanel.setBackground(BG);
@@ -1493,7 +1593,7 @@ public class SecurityHeadersTab extends JPanel {
         respPanel.setBackground(BG);
         JLabel respLabel = new JLabel("  RESPONSE");
         respLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
-        respLabel.setForeground(TXT2);
+        respLabel.setForeground(ACCENT);
         respLabel.setOpaque(true);
         respLabel.setBackground(BG2);
         respLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
@@ -1505,11 +1605,33 @@ public class SecurityHeadersTab extends JPanel {
         respPanel.add(respLabel, BorderLayout.NORTH);
         respPanel.add(respSp, BorderLayout.CENTER);
 
+        JPanel repPolicyPanel = new JPanel(new BorderLayout());
+        repPolicyPanel.setBackground(BG);
+        JLabel repPolicyLabel = new JLabel("  POLICY COMPLIANCE");
+        repPolicyLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
+        repPolicyLabel.setForeground(ACCENT);
+        repPolicyLabel.setOpaque(true);
+        repPolicyLabel.setBackground(BG2);
+        repPolicyLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        JScrollPane repPolicySp = new JScrollPane(repPolicyDetailArea);
+        repPolicySp.setBorder(BorderFactory.createLineBorder(BORDER));
+        repPolicySp.getViewport().setBackground(BG_INPUT);
+        repPolicySp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        repPolicySp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        repPolicyPanel.add(repPolicyLabel, BorderLayout.NORTH);
+        repPolicyPanel.add(repPolicySp, BorderLayout.CENTER);
+
         JSplitPane reqRespSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqPanel, respPanel);
         reqRespSplit.setResizeWeight(0.5);
         reqRespSplit.setDividerSize(4);
         reqRespSplit.setBackground(BG);
         reqRespSplit.setBorder(null);
+
+        JSplitPane repDetailSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqRespSplit, repPolicyPanel);
+        repDetailSplit.setResizeWeight(0.7);
+        repDetailSplit.setDividerSize(4);
+        repDetailSplit.setBackground(BG);
+        repDetailSplit.setBorder(null);
 
         // Detail wrapper with subtle close bar
         JPanel detailWrapper = new JPanel(new BorderLayout());
@@ -1521,7 +1643,7 @@ public class SecurityHeadersTab extends JPanel {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER),
                 new EmptyBorder(2, 12, 2, 4)));
 
-        JLabel detailTitle = new JLabel("  Request / Response");
+        JLabel detailTitle = new JLabel("  Request / Response / Policy Compliance");
         detailTitle.setFont(new Font("SansSerif", Font.PLAIN, 12));
         detailTitle.setForeground(TXT_M);
 
@@ -1551,7 +1673,7 @@ public class SecurityHeadersTab extends JPanel {
         detailHeaderBar.add(detailRightBtns, BorderLayout.EAST);
 
         detailWrapper.add(detailHeaderBar, BorderLayout.NORTH);
-        detailWrapper.add(reqRespSplit, BorderLayout.CENTER);
+        detailWrapper.add(repDetailSplit, BorderLayout.CENTER);
 
         JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableSp, detailWrapper);
         mainSplit.setResizeWeight(0.55);
@@ -1568,6 +1690,7 @@ public class SecurityHeadersTab extends JPanel {
             table.clearSelection();
             requestArea.setText("");
             responseArea.setText("");
+            repPolicyDetailArea.setText("");
             reqLabel.setText("  REQUEST");
             respLabel.setText("  RESPONSE");
             if (detailShown[0]) {
@@ -1585,6 +1708,7 @@ public class SecurityHeadersTab extends JPanel {
             if (viewRow < 0) {
                 requestArea.setText("");
                 responseArea.setText("");
+                repPolicyDetailArea.setText("");
                 reqLabel.setText("  REQUEST");
                 respLabel.setText("  RESPONSE");
                 if (detailShown[0]) {
@@ -1608,6 +1732,9 @@ public class SecurityHeadersTab extends JPanel {
             responseArea.setText(respText != null ? respText : "(No response data captured)");
             requestArea.setCaretPosition(0);
             responseArea.setCaretPosition(0);
+
+            repPolicyDetailArea.setText(formatPolicyEvaluation(repeaterTableModel.getEvaluation(r)));
+            repPolicyDetailArea.setCaretPosition(0);
 
             if (!detailShown[0]) {
                 contentWrapper.removeAll();
@@ -2850,6 +2977,7 @@ public class SecurityHeadersTab extends JPanel {
     private void applyRepeaterFilters() {
         List<HeaderResult> all = repeaterResultStore.getAll();
         FilterState fs = buildRepeaterFilterState();
+        repeaterTableModel.setPolicyContext(policyEvaluator, policyStore.getActive());
         currentRepFiltered = filterService.apply(all, fs);
         repeaterTableModel.setTestcaseCounts(tcResultStore.getAll(), library.size(), library);
         repeaterTableModel.setData(currentRepFiltered);
@@ -3139,6 +3267,17 @@ public class SecurityHeadersTab extends JPanel {
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
+    private static int headerPolicyIndex(String headerName) {
+        return switch (headerName) {
+            case "Strict-Transport-Security" -> 0;
+            case "Cache-Control" -> 1;
+            case "X-Frame-Options" -> 2;
+            case "X-Content-Type-Options" -> 3;
+            case "Access-Control-Allow-Origin" -> 4;
+            default -> -1;
+        };
+    }
+
     private HeaderResult findHeaderResultForEndpoint(String endpointKey) {
         if (endpointKey == null) return null;
         List<HeaderResult> all = resultStore.getAll();
@@ -3146,6 +3285,24 @@ public class SecurityHeadersTab extends JPanel {
             if (endpointKey.equals(all.get(i).endpointKey())) return all.get(i);
         }
         return null;
+    }
+
+    private static boolean isSameOriginReflectionStatic(String acaoVal, String hostHeader) {
+        if (hostHeader == null || hostHeader.isEmpty()) return false;
+        try {
+            java.net.URI uri = java.net.URI.create(acaoVal.trim());
+            String acaoHost = uri.getHost();
+            if (acaoHost == null) return false;
+            int acaoPort = uri.getPort();
+            String hostOnly = hostHeader.contains(":") ? hostHeader.substring(0, hostHeader.indexOf(':')) : hostHeader;
+            int hostPort = hostHeader.contains(":")
+                    ? Integer.parseInt(hostHeader.substring(hostHeader.indexOf(':') + 1).trim()) : -1;
+            if (!acaoHost.equalsIgnoreCase(hostOnly.trim())) return false;
+            if (acaoPort > 0 && hostPort > 0 && acaoPort != hostPort) return false;
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     // ─── Table styling ───────────────────────────────────────────────────────
