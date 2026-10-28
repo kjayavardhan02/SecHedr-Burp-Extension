@@ -109,8 +109,29 @@ public final class HeaderResult {
         if ("*".equals(v)) return true;
         if ("null".equalsIgnoreCase(v)) return true;
         if (requestOrigin != null && !requestOrigin.isEmpty()
-                && v.equalsIgnoreCase(requestOrigin.trim())) return true;
+                && v.equalsIgnoreCase(requestOrigin.trim())) {
+            return !isSameOriginReflection(v);
+        }
         return false;
+    }
+
+    private boolean isSameOriginReflection(String acaoVal) {
+        if (host == null || host.isEmpty()) return false;
+        try {
+            java.net.URI uri = java.net.URI.create(acaoVal.trim());
+            String acaoHost = uri.getHost();
+            int acaoPort = uri.getPort();
+            if (acaoHost == null) return false;
+            if (!acaoHost.equalsIgnoreCase(host)) return false;
+            if (acaoPort > 0 && acaoPort != port) return false;
+            if (acaoPort <= 0) {
+                int defaultPort = "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+                if (defaultPort != port && port > 0) return false;
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public int missingCount() {

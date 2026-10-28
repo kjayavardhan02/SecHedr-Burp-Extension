@@ -180,18 +180,23 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
         String reqData = r.requestData();
         if (reqData != null && !reqData.isEmpty()) {
             String originValue = null;
+            String hostValue = null;
             String reqHeaders = reqData.contains("\r\n\r\n")
                     ? reqData.substring(0, reqData.indexOf("\r\n\r\n"))
                     : (reqData.contains("\n\n") ? reqData.substring(0, reqData.indexOf("\n\n")) : reqData);
             for (String line : reqHeaders.split("\\r?\\n")) {
-                if (line.toLowerCase(Locale.ROOT).startsWith("origin:")) {
+                String lower = line.toLowerCase(Locale.ROOT);
+                if (lower.startsWith("origin:") && originValue == null) {
                     originValue = line.substring("origin:".length()).trim();
-                    break;
+                } else if (lower.startsWith("host:") && hostValue == null) {
+                    hostValue = line.substring("host:".length()).trim();
                 }
             }
             if (originValue != null && !originValue.isEmpty()
                     && acaoValue.equalsIgnoreCase(originValue)) {
-                return "FAIL";
+                if (!isSameOriginReflection(acaoValue, hostValue)) {
+                    return "FAIL";
+                }
             }
         }
 
@@ -222,18 +227,23 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
         String reqData = r.requestData();
         if (reqData != null && !reqData.isEmpty()) {
             String originValue = null;
+            String hostValue = null;
             String reqHeaders = reqData.contains("\r\n\r\n")
                     ? reqData.substring(0, reqData.indexOf("\r\n\r\n"))
                     : (reqData.contains("\n\n") ? reqData.substring(0, reqData.indexOf("\n\n")) : reqData);
             for (String line : reqHeaders.split("\\r?\\n")) {
-                if (line.toLowerCase(Locale.ROOT).startsWith("origin:")) {
+                String lower = line.toLowerCase(Locale.ROOT);
+                if (lower.startsWith("origin:") && originValue == null) {
                     originValue = line.substring("origin:".length()).trim();
-                    break;
+                } else if (lower.startsWith("host:") && hostValue == null) {
+                    hostValue = line.substring("host:".length()).trim();
                 }
             }
             if (originValue != null && !originValue.isEmpty()
                     && acaoValue.equalsIgnoreCase(originValue)) {
-                return "FAIL";
+                if (!isSameOriginReflection(acaoValue, hostValue)) {
+                    return "FAIL";
+                }
             }
         }
 
@@ -283,5 +293,23 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
         if ("NOT_TESTED".equals(overallStatus) || "UNSUPPORTED".equals(overallStatus)) return overallStatus;
 
         return "—";
+    }
+
+    private static boolean isSameOriginReflection(String acaoVal, String hostHeader) {
+        if (hostHeader == null || hostHeader.isEmpty()) return false;
+        try {
+            java.net.URI uri = java.net.URI.create(acaoVal.trim());
+            String acaoHost = uri.getHost();
+            if (acaoHost == null) return false;
+            int acaoPort = uri.getPort();
+            String hostOnly = hostHeader.contains(":") ? hostHeader.substring(0, hostHeader.indexOf(':')) : hostHeader;
+            int hostPort = hostHeader.contains(":")
+                    ? Integer.parseInt(hostHeader.substring(hostHeader.indexOf(':') + 1).trim()) : -1;
+            if (!acaoHost.equalsIgnoreCase(hostOnly.trim())) return false;
+            if (acaoPort > 0 && hostPort > 0 && acaoPort != hostPort) return false;
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

@@ -1644,31 +1644,32 @@ public class SecurityHeadersTab extends JPanel {
     }
 
     private JToggleButton createWrapToggle(JTextArea... areas) {
-        JToggleButton btn = new JToggleButton("Wrap");
-        btn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        btn.setForeground(TXT_M);
-        btn.setBackground(BG2);
+        JToggleButton btn = new JToggleButton("Wrap") {
+            @Override protected void paintComponent(java.awt.Graphics g) {
+                java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(isSelected() ? ACCENT : ACCENT_DIM);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        btn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        btn.setForeground(Color.WHITE);
         btn.setFocusPainted(false);
         btn.setBorderPainted(false);
         btn.setContentAreaFilled(false);
+        btn.setOpaque(false);
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btn.setBorder(new EmptyBorder(2, 10, 2, 10));
+        btn.setBorder(new EmptyBorder(3, 10, 3, 10));
         btn.setToolTipText("Toggle word wrap");
         btn.addActionListener(e -> {
             boolean wrap = btn.isSelected();
-            btn.setForeground(wrap ? ACCENT : TXT_M);
             for (JTextArea area : areas) {
                 area.setLineWrap(wrap);
                 area.setWrapStyleWord(wrap);
             }
-        });
-        btn.addMouseListener(new MouseAdapter() {
-            @Override public void mouseEntered(MouseEvent e) {
-                if (!btn.isSelected()) btn.setForeground(TXT2);
-            }
-            @Override public void mouseExited(MouseEvent e) {
-                btn.setForeground(btn.isSelected() ? ACCENT : TXT_M);
-            }
+            btn.repaint();
         });
         return btn;
     }
