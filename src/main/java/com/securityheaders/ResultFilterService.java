@@ -1,11 +1,19 @@
 package com.securityheaders;
 
+import com.securityheaders.policy.PolicyComplianceStatus;
+
 import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class ResultFilterService {
 
     public List<HeaderResult> apply(List<HeaderResult> results, FilterState filter) {
+        return apply(results, filter, null);
+    }
+
+    public List<HeaderResult> apply(List<HeaderResult> results, FilterState filter,
+                                     Function<HeaderResult, PolicyComplianceStatus> policyStatusFn) {
         if (!filter.isActive()) {
             return results;
         }
@@ -14,7 +22,16 @@ public class ResultFilterService {
                 .filter(r -> matchesHost(r, filter.hostFilter()))
                 .filter(r -> matchesStatus(r, filter.statusCodes()))
                 .filter(r -> matchesHeader(r, filter.headerFilter()))
+                .filter(r -> matchesPolicyCompliance(r, filter.policyComplianceFilter(), policyStatusFn))
                 .collect(Collectors.toList());
+    }
+
+    private boolean matchesPolicyCompliance(HeaderResult r, String filterValue,
+                                             Function<HeaderResult, PolicyComplianceStatus> fn) {
+        if (filterValue == null || "All".equals(filterValue)) return true;
+        if (fn == null) return true;
+        PolicyComplianceStatus status = fn.apply(r);
+        return status.displayLabel().equals(filterValue);
     }
 
     private boolean matchesSearch(HeaderResult r, String search) {

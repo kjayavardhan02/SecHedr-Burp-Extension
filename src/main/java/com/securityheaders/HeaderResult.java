@@ -25,13 +25,14 @@ public final class HeaderResult {
     private final String rawResponse;
     private final String acaoValue;
     private final String requestOrigin;
+    private final boolean isHttps;
 
     public HeaderResult(String host, int port, String method, String pathAndQuery,
                         int statusCode, boolean hstsPresent, boolean cacheControlPresent,
                         boolean xfoPresent, boolean xctoPresent,
                         boolean acaoPresent, boolean cspPresent) {
         this(host, port, method, pathAndQuery, statusCode, hstsPresent, cacheControlPresent,
-                xfoPresent, false, xctoPresent, acaoPresent, cspPresent, null, null, null, null);
+                xfoPresent, false, xctoPresent, acaoPresent, cspPresent, null, null, null, null, false);
     }
 
     public HeaderResult(String host, int port, String method, String pathAndQuery,
@@ -41,7 +42,7 @@ public final class HeaderResult {
                         String rawRequest, String rawResponse) {
         this(host, port, method, pathAndQuery, statusCode, hstsPresent, cacheControlPresent,
                 xfoPresent, xfoCoveredByCsp, xctoPresent, acaoPresent, cspPresent,
-                rawRequest, rawResponse, null, null);
+                rawRequest, rawResponse, null, null, false);
     }
 
     public HeaderResult(String host, int port, String method, String pathAndQuery,
@@ -50,6 +51,17 @@ public final class HeaderResult {
                         boolean acaoPresent, boolean cspPresent,
                         String rawRequest, String rawResponse,
                         String acaoValue, String requestOrigin) {
+        this(host, port, method, pathAndQuery, statusCode, hstsPresent, cacheControlPresent,
+                xfoPresent, xfoCoveredByCsp, xctoPresent, acaoPresent, cspPresent,
+                rawRequest, rawResponse, acaoValue, requestOrigin, false);
+    }
+
+    public HeaderResult(String host, int port, String method, String pathAndQuery,
+                        int statusCode, boolean hstsPresent, boolean cacheControlPresent,
+                        boolean xfoPresent, boolean xfoCoveredByCsp, boolean xctoPresent,
+                        boolean acaoPresent, boolean cspPresent,
+                        String rawRequest, String rawResponse,
+                        String acaoValue, String requestOrigin, boolean isHttps) {
         this.id = ID_GEN.incrementAndGet();
         this.observedAt = Instant.now();
         this.host = host;
@@ -68,6 +80,7 @@ public final class HeaderResult {
         this.rawResponse = rawResponse;
         this.acaoValue = acaoValue;
         this.requestOrigin = requestOrigin;
+        this.isHttps = isHttps;
     }
 
     public long id() { return id; }
@@ -88,6 +101,7 @@ public final class HeaderResult {
     public String rawResponse() { return rawResponse; }
     public String acaoValue() { return acaoValue; }
     public String requestOrigin() { return requestOrigin; }
+    public boolean isHttps() { return isHttps; }
 
     public boolean acaoCheckFailed() {
         if (!acaoPresent || acaoValue == null) return false;

@@ -1,5 +1,9 @@
 package com.securityheaders;
 
+import com.securityheaders.policy.PolicyComplianceStatus;
+import com.securityheaders.policy.PolicyEvaluationResult;
+import com.securityheaders.policy.PolicyEvaluator;
+import com.securityheaders.policy.PolicyProfile;
 import com.securityheaders.testcase.ExecutionMode;
 import com.securityheaders.testcase.ResultStatus;
 import com.securityheaders.testcase.TestcaseDefinition;
@@ -14,12 +18,17 @@ public class ResultsTableModel extends AbstractTableModel {
     private static final String[] COLUMN_NAMES = {
         "Host", "Method", "URL (Path)", "Status Code",
         "HSTS", "Cache-Control", "XFO", "XCTO", "ACAO", "ACAO Checks", "CSP",
-        "Passive TC", "Active TC", "Not Executed"
+        "Passive TC", "Active TC", "Not Executed",
+        "Policy Compliance"
     };
 
     private List<HeaderResult> results = new ArrayList<>();
     private Map<String, int[]> tcCounts = new HashMap<>();
     private int totalTc = 0;
+
+    private PolicyEvaluator policyEvaluator;
+    private PolicyProfile activePolicy;
+    private final Map<Long, PolicyEvaluationResult> evalCache = new HashMap<>();
 
     @Override
     public int getRowCount() {
@@ -57,6 +66,7 @@ public class ResultsTableModel extends AbstractTableModel {
             case 11 -> tcCounts.getOrDefault(r.endpointKey(), new int[]{0, 0, totalTc})[0];
             case 12 -> tcCounts.getOrDefault(r.endpointKey(), new int[]{0, 0, totalTc})[1];
             case 13 -> tcCounts.getOrDefault(r.endpointKey(), new int[]{0, 0, totalTc})[2];
+            case 14 -> getComplianceStatus(r).displayLabel();
             default -> "";
         };
     }
@@ -71,6 +81,29 @@ public class ResultsTableModel extends AbstractTableModel {
     public void setData(List<HeaderResult> data) {
         this.results = new ArrayList<>(data);
         fireTableDataChanged();
+    }
+
+    public void setPolicyContext(PolicyEvaluator evaluator, PolicyProfile active) {
+        this.policyEvaluator = evaluator;
+        this.activePolicy = active;
+        evalCache.clear();
+    }
+
+    public PolicyComplianceStatus getComplianceStatus(HeaderResult r) {
+        if (policyEvaluator == null || activePolicy == null)
+            return PolicyComplianceStatus.NOT_EVALUATED;
+        return getEvaluation(r).overallStatus();
+    }
+
+    public PolicyEvaluationResult getEvaluation(HeaderResult r) {
+        if (policyEvaluator == null || activePolicy == null)
+            return PolicyEvaluationResult.notEvaluated();
+        return evalCache.computeIfAbsent(r.id(),
+                id -> policyEvaluator.evaluate(r, activePolicy));
+    }
+
+    public void invalidateEvalCache() {
+        evalCache.clear();
     }
 
     public void setTestcaseCounts(List<TestcaseResult> results, int totalTestcases,

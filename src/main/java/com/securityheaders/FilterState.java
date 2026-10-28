@@ -21,28 +21,38 @@ public final class FilterState {
     private final String hostFilter;
     private final Set<Integer> statusCodes;
     private final HeaderFilter headerFilter;
+    private final String policyComplianceFilter;
 
     public FilterState(String searchText, String hostFilter,
                        Set<Integer> statusCodes, HeaderFilter headerFilter) {
+        this(searchText, hostFilter, statusCodes, headerFilter, null);
+    }
+
+    public FilterState(String searchText, String hostFilter,
+                       Set<Integer> statusCodes, HeaderFilter headerFilter,
+                       String policyComplianceFilter) {
         this.searchText = searchText == null ? "" : searchText.trim().toLowerCase();
         this.hostFilter = hostFilter == null || hostFilter.isBlank() ? null : hostFilter.trim().toLowerCase();
         this.statusCodes = statusCodes == null ? Collections.emptySet() : Set.copyOf(statusCodes);
         this.headerFilter = headerFilter == null ? HeaderFilter.ALL : headerFilter;
+        this.policyComplianceFilter = policyComplianceFilter;
     }
 
     public static FilterState none() {
-        return new FilterState("", null, Collections.emptySet(), HeaderFilter.ALL);
+        return new FilterState("", null, Collections.emptySet(), HeaderFilter.ALL, null);
     }
 
     public String searchText() { return searchText; }
     public String hostFilter() { return hostFilter; }
     public Set<Integer> statusCodes() { return statusCodes; }
     public HeaderFilter headerFilter() { return headerFilter; }
+    public String policyComplianceFilter() { return policyComplianceFilter; }
 
     public boolean isActive() {
         return !searchText.isEmpty()
                 || hostFilter != null
                 || !statusCodes.isEmpty()
-                || headerFilter != HeaderFilter.ALL;
+                || headerFilter != HeaderFilter.ALL
+                || (policyComplianceFilter != null && !"All".equals(policyComplianceFilter));
     }
 }

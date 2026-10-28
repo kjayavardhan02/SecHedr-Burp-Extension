@@ -16,6 +16,7 @@ import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.securityheaders.policy.*;
 import com.securityheaders.testcase.*;
 
 public class SecurityHeadersTab extends JPanel {
@@ -96,7 +97,6 @@ public class SecurityHeadersTab extends JPanel {
 
     private final ResultsTableModel rawTableModel = new ResultsTableModel();
     private final HostSummaryTableModel hostTableModel = new HostSummaryTableModel();
-    private final EndpointSummaryTableModel epTableModel = new EndpointSummaryTableModel();
     private final ResultsTableModel repeaterTableModel = new ResultsTableModel();
     private TestcaseResultsTableModel tcTableModel;
 
@@ -119,12 +119,6 @@ public class SecurityHeadersTab extends JPanel {
     private JComboBox<String> hostHeaderCombo;
     private JLabel hostFilterIndicator;
 
-    // Endpoint Summary filter controls
-    private JTextField epSearchField;
-    private JComboBox<String> epHostCombo;
-    private JComboBox<String> epHeaderCombo;
-    private JLabel epFilterIndicator;
-
     // Catalog filter
     private JTextField catalogSearchField;
     private JComboBox<String> catalogCategoryCombo;
@@ -144,17 +138,25 @@ public class SecurityHeadersTab extends JPanel {
     private JComboBox<String> tcStatusCodeCombo;
     private JTextField tcPathField;
 
+    // Policy compliance filter
+    private JComboBox<String> rawPolicyCombo;
+
     private List<HeaderResult> currentFiltered = new ArrayList<>();
     private List<HeaderResult> currentRepFiltered = new ArrayList<>();
     private List<TestcaseResult> currentTcFiltered = new ArrayList<>();
     private volatile boolean refreshingCombos = false;
+
+    private final com.securityheaders.policy.PolicyStore policyStore;
+    private final com.securityheaders.policy.PolicyEvaluator policyEvaluator;
 
     public SecurityHeadersTab(ResultStore resultStore, ResultStore repeaterResultStore,
                               ScopeManager scopeManager, HeaderCheckHttpHandler handler,
                               TestcaseLibrary library, TestcaseResultStore tcResultStore,
                               EndpointRegistry endpointRegistry, ApprovedBaseline baseline,
                               ActiveRunner activeRunner, TestcaseSelector selector,
-                              ScanHealthTracker healthTracker) {
+                              ScanHealthTracker healthTracker,
+                              com.securityheaders.policy.PolicyStore policyStore,
+                              com.securityheaders.policy.PolicyEvaluator policyEvaluator) {
         this.resultStore = resultStore;
         this.repeaterResultStore = repeaterResultStore;
         this.scopeManager = scopeManager;
@@ -166,7 +168,21 @@ public class SecurityHeadersTab extends JPanel {
         this.activeRunner = activeRunner;
         this.selector = selector;
         this.healthTracker = healthTracker;
+        this.policyStore = policyStore;
+        this.policyEvaluator = policyEvaluator;
         this.tcTableModel = new TestcaseResultsTableModel(library);
+
+        policyStore.setOnPolicyChange(() -> javax.swing.SwingUtilities.invokeLater(() -> {
+            rawTableModel.invalidateEvalCache();
+            rawTableModel.setPolicyContext(policyEvaluator, policyStore.getActive());
+            repeaterTableModel.invalidateEvalCache();
+            repeaterTableModel.setPolicyContext(policyEvaluator, policyStore.getActive());
+            tcTableModel.invalidateEvalCache();
+            tcTableModel.setPolicyContext(policyEvaluator, policyStore.getActive(), this::findHeaderResultForEndpoint);
+            rawTableModel.fireTableDataChanged();
+            repeaterTableModel.fireTableDataChanged();
+            tcTableModel.fireTableDataChanged();
+        }));
 
         setLayout(new BorderLayout());
         setBackground(BG);
@@ -205,7 +221,6 @@ public class SecurityHeadersTab extends JPanel {
 
         javax.swing.Timer dashTimer = new javax.swing.Timer(5000, e -> {
             refreshDashboard();
-            applyEpFilters();
         });
         dashTimer.setRepeats(true);
         dashTimer.start();
@@ -388,10 +403,10 @@ public class SecurityHeadersTab extends JPanel {
         tabs.addTab("Dashboard", createIcon(14, ACCENT, "dash"), createDashboardPanel(), null);
         tabs.addTab("Raw Results", createIcon(14, ACCENT, "grid"), createRawResultsPanel(), null);
         tabs.addTab("Host Summary", createIcon(14, ACCENT, "globe"), createHostSummaryPanel(), null);
-        tabs.addTab("Endpoint Summary", createIcon(14, ACCENT, "endpoint"), createEndpointSummaryPanel(), null);
         tabs.addTab("Repeater Requests", createIcon(14, ACCENT, "repeat"), createRepeaterPanel(), null);
         tabs.addTab("Testcase Catalog", createIcon(14, TXT2, "list"), createCatalogPanel(), null);
         tabs.addTab("Testcase Results", createIcon(14, GREEN_FG, "check"), createTestcasePanel(), null);
+        tabs.addTab("Policies", createIcon(14, WARN_FG, "gear"), createPoliciesPanel(), null);
         tabs.addTab("Scope & Export", createIcon(14, TXT2, "gear"), createScopeExportPanel(), null);
 
         mainTabs = tabs;
@@ -468,8 +483,8 @@ public class SecurityHeadersTab extends JPanel {
         affectedCard.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
                 if (mainTabs != null) {
-                    mainTabs.setSelectedIndex(3);
-                    epHeaderCombo.setSelectedIndex(1);
+                    mainTabs.setSelectedIndex(1);
+                    rawHeaderCombo.setSelectedIndex(1);
                 }
             }
         });
@@ -479,8 +494,8 @@ public class SecurityHeadersTab extends JPanel {
         compliantCard.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
                 if (mainTabs != null) {
-                    mainTabs.setSelectedIndex(3);
-                    epHeaderCombo.setSelectedIndex(0);
+                    mainTabs.setSelectedIndex(1);
+                    rawHeaderCombo.setSelectedIndex(0);
                 }
             }
         });
@@ -634,7 +649,7 @@ public class SecurityHeadersTab extends JPanel {
         row.add(rightPanel, BorderLayout.EAST);
 
         row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        final int tabIndex = isRaw ? 1 : 6;
+        final int tabIndex = isRaw ? 1 : 5;
         row.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
                 if (mainTabs != null) {
@@ -823,6 +838,10 @@ public class SecurityHeadersTab extends JPanel {
         rawHeaderCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyRawFilters(); });
         bar.add(label("Header")); bar.add(rawHeaderCombo);
 
+        rawPolicyCombo = darkCombo(new String[]{"All", "PASS", "FAIL", "N/A", "NOT EVALUATED"});
+        rawPolicyCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyRawFilters(); });
+        bar.add(label("Policy")); bar.add(rawPolicyCombo);
+
         JButton clearFilt = pill("Reset", new Color(60, 64, 76), new Color(75, 80, 94));
         clearFilt.addActionListener(e -> clearRawFilters());
         bar.add(clearFilt);
@@ -844,6 +863,7 @@ public class SecurityHeadersTab extends JPanel {
         applyCenterRenderer(table, 11);
         applyCenterRenderer(table, 12);
         applyCenterRenderer(table, 13);
+        applyComplianceRenderer(table, 14);
 
         JScrollPane tableSp = new JScrollPane(table);
         tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
@@ -854,6 +874,13 @@ public class SecurityHeadersTab extends JPanel {
         // Request/Response detail
         JTextArea requestArea = darkTextArea();
         JTextArea responseArea = darkTextArea();
+        JEditorPane policyDetailArea = new JEditorPane();
+        policyDetailArea.setContentType("text/html");
+        policyDetailArea.setEditable(false);
+        policyDetailArea.setBackground(BG_INPUT);
+        policyDetailArea.setForeground(TXT);
+        policyDetailArea.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+        policyDetailArea.setFont(new Font("SansSerif", Font.PLAIN, 13));
 
         JPanel reqPanel = new JPanel(new BorderLayout());
         reqPanel.setBackground(BG);
@@ -876,7 +903,7 @@ public class SecurityHeadersTab extends JPanel {
         respPanel.setBackground(BG);
         JLabel respLabel = new JLabel("  RESPONSE");
         respLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
-        respLabel.setForeground(TXT2);
+        respLabel.setForeground(ACCENT);
         respLabel.setOpaque(true);
         respLabel.setBackground(BG2);
         respLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
@@ -888,11 +915,33 @@ public class SecurityHeadersTab extends JPanel {
         respPanel.add(respLabel, BorderLayout.NORTH);
         respPanel.add(respSp, BorderLayout.CENTER);
 
+        JPanel policyPanel = new JPanel(new BorderLayout());
+        policyPanel.setBackground(BG);
+        JLabel policyLabel = new JLabel("  POLICY COMPLIANCE");
+        policyLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
+        policyLabel.setForeground(ACCENT);
+        policyLabel.setOpaque(true);
+        policyLabel.setBackground(BG2);
+        policyLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        JScrollPane policySp = new JScrollPane(policyDetailArea);
+        policySp.setBorder(BorderFactory.createLineBorder(BORDER));
+        policySp.getViewport().setBackground(BG_INPUT);
+        policySp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        policySp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        policyPanel.add(policyLabel, BorderLayout.NORTH);
+        policyPanel.add(policySp, BorderLayout.CENTER);
+
         JSplitPane reqRespSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqPanel, respPanel);
         reqRespSplit.setResizeWeight(0.5);
         reqRespSplit.setDividerSize(4);
         reqRespSplit.setBackground(BG);
         reqRespSplit.setBorder(null);
+
+        JSplitPane detailSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqRespSplit, policyPanel);
+        detailSplit.setResizeWeight(0.7);
+        detailSplit.setDividerSize(4);
+        detailSplit.setBackground(BG);
+        detailSplit.setBorder(null);
 
         JPanel detailWrapper = new JPanel(new BorderLayout());
         detailWrapper.setBackground(BG);
@@ -903,7 +952,7 @@ public class SecurityHeadersTab extends JPanel {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER),
                 new EmptyBorder(2, 12, 2, 4)));
 
-        JLabel detailTitle = new JLabel("  Request / Response");
+        JLabel detailTitle = new JLabel("  Request / Response / Policy Compliance");
         detailTitle.setFont(new Font("SansSerif", Font.PLAIN, 12));
         detailTitle.setForeground(TXT_M);
 
@@ -922,11 +971,18 @@ public class SecurityHeadersTab extends JPanel {
             @Override public void mouseExited(MouseEvent e) { closeDetailBtn.setForeground(TXT_M); }
         });
 
+        JToggleButton wrapToggle = createWrapToggle(requestArea, responseArea);
+
+        JPanel detailRightBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        detailRightBtns.setOpaque(false);
+        detailRightBtns.add(wrapToggle);
+        detailRightBtns.add(closeDetailBtn);
+
         detailHeaderBar.add(detailTitle, BorderLayout.WEST);
-        detailHeaderBar.add(closeDetailBtn, BorderLayout.EAST);
+        detailHeaderBar.add(detailRightBtns, BorderLayout.EAST);
 
         detailWrapper.add(detailHeaderBar, BorderLayout.NORTH);
-        detailWrapper.add(reqRespSplit, BorderLayout.CENTER);
+        detailWrapper.add(detailSplit, BorderLayout.CENTER);
 
         JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableSp, detailWrapper);
         mainSplit.setResizeWeight(0.55);
@@ -943,6 +999,7 @@ public class SecurityHeadersTab extends JPanel {
             table.clearSelection();
             requestArea.setText("");
             responseArea.setText("");
+            policyDetailArea.setText("");
             reqLabel.setText("  REQUEST");
             respLabel.setText("  RESPONSE");
             if (detailShown[0]) {
@@ -960,6 +1017,7 @@ public class SecurityHeadersTab extends JPanel {
             if (viewRow < 0) {
                 requestArea.setText("");
                 responseArea.setText("");
+                policyDetailArea.setText("");
                 reqLabel.setText("  REQUEST");
                 respLabel.setText("  RESPONSE");
                 if (detailShown[0]) {
@@ -983,6 +1041,9 @@ public class SecurityHeadersTab extends JPanel {
             responseArea.setText(respText != null ? respText : "(No response data captured)");
             requestArea.setCaretPosition(0);
             responseArea.setCaretPosition(0);
+
+            policyDetailArea.setText(formatPolicyEvaluation(rawTableModel.getEvaluation(r)));
+            policyDetailArea.setCaretPosition(0);
 
             if (!detailShown[0]) {
                 contentWrapper.removeAll();
@@ -1067,233 +1128,6 @@ public class SecurityHeadersTab extends JPanel {
         return panel;
     }
 
-    // ─── Endpoint Summary Panel (with request/response detail) ──────────────
-
-    private JPanel createEndpointSummaryPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(BG);
-        panel.setBorder(new EmptyBorder(6, 10, 6, 10));
-
-        // Filter bar
-        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        bar.setBackground(BG2);
-        bar.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
-                new EmptyBorder(6, 14, 6, 14)));
-
-        epSearchField = darkField(14);
-        epSearchField.setToolTipText("Search host/path");
-        epSearchField.addActionListener(e -> applyEpFilters());
-        bar.add(label("Search")); bar.add(epSearchField);
-
-        epHostCombo = darkCombo(new String[]{"None"});
-        epHostCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyEpFilters(); });
-        bar.add(label("Host")); bar.add(epHostCombo);
-
-        epHeaderCombo = darkCombo(new String[]{
-                "None", "Any Missing", "All Missing", "HSTS Missing", "Cache-Control Missing",
-                "XFO Missing", "XCTO Missing", "ACAO Missing", "CSP Missing"});
-        epHeaderCombo.addItemListener(e -> { if (e.getStateChange() == ItemEvent.SELECTED && !refreshingCombos) applyEpFilters(); });
-        bar.add(label("Header")); bar.add(epHeaderCombo);
-
-        JButton clearBtn = pill("Reset", new Color(60, 64, 76), new Color(75, 80, 94));
-        clearBtn.addActionListener(e -> {
-            epSearchField.setText("");
-            epHostCombo.setSelectedIndex(0);
-            epHeaderCombo.setSelectedIndex(0);
-            applyEpFilters();
-        });
-        bar.add(clearBtn);
-
-        epFilterIndicator = new JLabel("");
-        epFilterIndicator.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        epFilterIndicator.setForeground(ACCENT);
-        bar.add(epFilterIndicator);
-
-        JTable table = new JTable(epTableModel);
-        styleTable(table);
-        applyCountRenderer(table, 5, 10);
-        applyCenterRenderer(table, 1);
-        applyCenterRenderer(table, 3);
-        applyCenterRenderer(table, 4);
-        applyCenterRenderer(table, 11);
-        applyCenterRenderer(table, 12);
-        applyCenterRenderer(table, 13);
-
-        JScrollPane tableSp = new JScrollPane(table);
-        tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
-        tableSp.getViewport().setBackground(TBL_EVEN);
-        tableSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
-        tableSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
-
-        // Request/Response detail
-        JTextArea requestArea = darkTextArea();
-        JTextArea responseArea = darkTextArea();
-
-        JPanel reqPanel = new JPanel(new BorderLayout());
-        reqPanel.setBackground(BG);
-        JLabel reqLabel = new JLabel("  REQUEST");
-        reqLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
-        reqLabel.setForeground(ACCENT);
-        reqLabel.setOpaque(true);
-        reqLabel.setBackground(BG2);
-        reqLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
-
-        JScrollPane reqSp = new JScrollPane(requestArea);
-        reqSp.setBorder(BorderFactory.createLineBorder(BORDER));
-        reqSp.getViewport().setBackground(BG_INPUT);
-        reqSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
-        reqSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
-        reqPanel.add(reqLabel, BorderLayout.NORTH);
-        reqPanel.add(reqSp, BorderLayout.CENTER);
-
-        JPanel respPanel = new JPanel(new BorderLayout());
-        respPanel.setBackground(BG);
-        JLabel respLabel = new JLabel("  RESPONSE");
-        respLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
-        respLabel.setForeground(TXT2);
-        respLabel.setOpaque(true);
-        respLabel.setBackground(BG2);
-        respLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
-        JScrollPane respSp = new JScrollPane(responseArea);
-        respSp.setBorder(BorderFactory.createLineBorder(BORDER));
-        respSp.getViewport().setBackground(BG_INPUT);
-        respSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
-        respSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
-        respPanel.add(respLabel, BorderLayout.NORTH);
-        respPanel.add(respSp, BorderLayout.CENTER);
-
-        JSplitPane reqRespSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqPanel, respPanel);
-        reqRespSplit.setResizeWeight(0.5);
-        reqRespSplit.setDividerSize(4);
-        reqRespSplit.setBackground(BG);
-        reqRespSplit.setBorder(null);
-
-        JPanel detailWrapper = new JPanel(new BorderLayout());
-        detailWrapper.setBackground(BG);
-
-        JPanel detailHeaderBar = new JPanel(new BorderLayout());
-        detailHeaderBar.setBackground(BG2);
-        detailHeaderBar.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER),
-                new EmptyBorder(2, 12, 2, 4)));
-
-        JLabel detailTitle = new JLabel("  Request / Response (most recent for endpoint)");
-        detailTitle.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        detailTitle.setForeground(TXT_M);
-
-        JButton closeDetailBtn = new JButton("✕");
-        closeDetailBtn.setFont(new Font("SansSerif", Font.PLAIN, 15));
-        closeDetailBtn.setForeground(TXT_M);
-        closeDetailBtn.setBackground(BG2);
-        closeDetailBtn.setFocusPainted(false);
-        closeDetailBtn.setBorderPainted(false);
-        closeDetailBtn.setContentAreaFilled(false);
-        closeDetailBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        closeDetailBtn.setBorder(new EmptyBorder(2, 10, 2, 10));
-        closeDetailBtn.setToolTipText("Close viewer");
-        closeDetailBtn.addMouseListener(new MouseAdapter() {
-            @Override public void mouseEntered(MouseEvent e) { closeDetailBtn.setForeground(RED_FG); }
-            @Override public void mouseExited(MouseEvent e) { closeDetailBtn.setForeground(TXT_M); }
-        });
-
-        detailHeaderBar.add(detailTitle, BorderLayout.WEST);
-        detailHeaderBar.add(closeDetailBtn, BorderLayout.EAST);
-
-        detailWrapper.add(detailHeaderBar, BorderLayout.NORTH);
-        detailWrapper.add(reqRespSplit, BorderLayout.CENTER);
-
-        JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableSp, detailWrapper);
-        mainSplit.setResizeWeight(0.55);
-        mainSplit.setDividerSize(5);
-        mainSplit.setBackground(BG);
-        mainSplit.setBorder(null);
-
-        JPanel contentWrapper = new JPanel(new BorderLayout());
-        contentWrapper.setBackground(BG);
-        contentWrapper.add(tableSp, BorderLayout.CENTER);
-        final boolean[] detailShown = {false};
-
-        closeDetailBtn.addActionListener(ev -> {
-            table.clearSelection();
-            requestArea.setText("");
-            responseArea.setText("");
-            reqLabel.setText("  REQUEST");
-            respLabel.setText("  RESPONSE");
-            if (detailShown[0]) {
-                contentWrapper.removeAll();
-                contentWrapper.add(tableSp, BorderLayout.CENTER);
-                contentWrapper.revalidate();
-                contentWrapper.repaint();
-                detailShown[0] = false;
-            }
-        });
-
-        table.getSelectionModel().addListSelectionListener(e -> {
-            if (e.getValueIsAdjusting()) return;
-            int viewRow = table.getSelectedRow();
-            if (viewRow < 0) {
-                requestArea.setText("");
-                responseArea.setText("");
-                reqLabel.setText("  REQUEST");
-                respLabel.setText("  RESPONSE");
-                if (detailShown[0]) {
-                    contentWrapper.removeAll();
-                    contentWrapper.add(tableSp, BorderLayout.CENTER);
-                    contentWrapper.revalidate();
-                    contentWrapper.repaint();
-                    detailShown[0] = false;
-                }
-                return;
-            }
-            int modelRow = table.convertRowIndexToModel(viewRow);
-            List<EndpointSummary> data = epTableModel.getData();
-            if (modelRow < 0 || modelRow >= data.size()) return;
-
-            EndpointSummary ep = data.get(modelRow);
-            String epKey = ep.host() + ":" + ep.port() + ":" + ep.method() + ":" + ep.pathAndQuery();
-
-            HeaderResult match = null;
-            List<HeaderResult> all = resultStore.getAll();
-            for (int i = all.size() - 1; i >= 0; i--) {
-                if (all.get(i).endpointKey().equals(epKey)) {
-                    match = all.get(i);
-                    break;
-                }
-            }
-
-            if (match != null) {
-                String reqText = match.rawRequest();
-                String respText = headersOnly(match.rawResponse());
-                requestArea.setText(reqText != null ? reqText : "(No request data captured)");
-                responseArea.setText(respText != null ? respText : "(No response data captured)");
-            } else {
-                requestArea.setText("(No matching result found)");
-                responseArea.setText("(No matching result found)");
-            }
-            requestArea.setCaretPosition(0);
-            responseArea.setCaretPosition(0);
-
-            if (!detailShown[0]) {
-                contentWrapper.removeAll();
-                mainSplit.setTopComponent(tableSp);
-                mainSplit.setBottomComponent(detailWrapper);
-                contentWrapper.add(mainSplit, BorderLayout.CENTER);
-                contentWrapper.revalidate();
-                contentWrapper.repaint();
-                SwingUtilities.invokeLater(() -> mainSplit.setDividerLocation(0.55));
-                detailShown[0] = true;
-            }
-            table.requestFocusInWindow();
-        });
-
-        addDetailArrowNav(table, requestArea, responseArea);
-
-        panel.add(bar, BorderLayout.NORTH);
-        panel.add(contentWrapper, BorderLayout.CENTER);
-        return panel;
-    }
-
     // ─── Testcase Results Panel ──────────────────────────────────────────────
 
     private JPanel createTestcasePanel() {
@@ -1351,6 +1185,7 @@ public class SecurityHeadersTab extends JPanel {
         applyTcAcaoColumnRenderer(table, 10);
         applyTcAcaoChecksRenderer(table, 11);
         applyTestcaseHeaderRenderer(table, 12, 12);
+        applyComplianceRenderer(table, 13);
         applyCenterRenderer(table, 4);
         applyCenterRenderer(table, 5);
 
@@ -1363,6 +1198,14 @@ public class SecurityHeadersTab extends JPanel {
         // Request/Response detail panel
         JTextArea requestArea = darkTextArea();
         JTextArea responseArea = darkTextArea();
+
+        JEditorPane tcPolicyDetailArea = new JEditorPane();
+        tcPolicyDetailArea.setContentType("text/html");
+        tcPolicyDetailArea.setEditable(false);
+        tcPolicyDetailArea.setBackground(BG_INPUT);
+        tcPolicyDetailArea.setForeground(TXT);
+        tcPolicyDetailArea.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+        tcPolicyDetailArea.setFont(new Font("SansSerif", Font.PLAIN, 13));
 
         JPanel reqPanel = new JPanel(new BorderLayout());
         reqPanel.setBackground(BG);
@@ -1385,7 +1228,7 @@ public class SecurityHeadersTab extends JPanel {
         respPanel.setBackground(BG);
         JLabel respLabel = new JLabel("  RESPONSE");
         respLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
-        respLabel.setForeground(TXT2);
+        respLabel.setForeground(ACCENT);
         respLabel.setOpaque(true);
         respLabel.setBackground(BG2);
         respLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
@@ -1397,11 +1240,33 @@ public class SecurityHeadersTab extends JPanel {
         respPanel.add(respLabel, BorderLayout.NORTH);
         respPanel.add(respSp, BorderLayout.CENTER);
 
+        JPanel tcPolicyPanel = new JPanel(new BorderLayout());
+        tcPolicyPanel.setBackground(BG);
+        JLabel tcPolicyLabel = new JLabel("  POLICY COMPLIANCE");
+        tcPolicyLabel.setFont(new Font("SansSerif", Font.BOLD, 13));
+        tcPolicyLabel.setForeground(ACCENT);
+        tcPolicyLabel.setOpaque(true);
+        tcPolicyLabel.setBackground(BG2);
+        tcPolicyLabel.setBorder(new EmptyBorder(4, 8, 4, 8));
+        JScrollPane tcPolicySp = new JScrollPane(tcPolicyDetailArea);
+        tcPolicySp.setBorder(BorderFactory.createLineBorder(BORDER));
+        tcPolicySp.getViewport().setBackground(BG_INPUT);
+        tcPolicySp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        tcPolicySp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+        tcPolicyPanel.add(tcPolicyLabel, BorderLayout.NORTH);
+        tcPolicyPanel.add(tcPolicySp, BorderLayout.CENTER);
+
         JSplitPane reqRespSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqPanel, respPanel);
         reqRespSplit.setResizeWeight(0.5);
         reqRespSplit.setDividerSize(4);
         reqRespSplit.setBackground(BG);
         reqRespSplit.setBorder(null);
+
+        JSplitPane tcDetailSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, reqRespSplit, tcPolicyPanel);
+        tcDetailSplit.setResizeWeight(0.7);
+        tcDetailSplit.setDividerSize(4);
+        tcDetailSplit.setBackground(BG);
+        tcDetailSplit.setBorder(null);
 
         // Detail wrapper with subtle close bar
         JPanel detailWrapper = new JPanel(new BorderLayout());
@@ -1413,7 +1278,7 @@ public class SecurityHeadersTab extends JPanel {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER),
                 new EmptyBorder(2, 12, 2, 4)));
 
-        JLabel detailTitle = new JLabel("  Request / Response");
+        JLabel detailTitle = new JLabel("  Request / Response / Policy Compliance");
         detailTitle.setFont(new Font("SansSerif", Font.PLAIN, 12));
         detailTitle.setForeground(TXT_M);
 
@@ -1432,11 +1297,18 @@ public class SecurityHeadersTab extends JPanel {
             @Override public void mouseExited(MouseEvent e) { closeDetailBtn.setForeground(TXT_M); }
         });
 
+        JToggleButton wrapToggle = createWrapToggle(requestArea, responseArea);
+
+        JPanel detailRightBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        detailRightBtns.setOpaque(false);
+        detailRightBtns.add(wrapToggle);
+        detailRightBtns.add(closeDetailBtn);
+
         detailHeaderBar.add(detailTitle, BorderLayout.WEST);
-        detailHeaderBar.add(closeDetailBtn, BorderLayout.EAST);
+        detailHeaderBar.add(detailRightBtns, BorderLayout.EAST);
 
         detailWrapper.add(detailHeaderBar, BorderLayout.NORTH);
-        detailWrapper.add(reqRespSplit, BorderLayout.CENTER);
+        detailWrapper.add(tcDetailSplit, BorderLayout.CENTER);
 
         JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableSp, detailWrapper);
         mainSplit.setResizeWeight(0.55);
@@ -1453,6 +1325,7 @@ public class SecurityHeadersTab extends JPanel {
             table.clearSelection();
             requestArea.setText("");
             responseArea.setText("");
+            tcPolicyDetailArea.setText("");
             reqLabel.setText("  REQUEST");
             respLabel.setText("  RESPONSE");
             if (detailShown[0]) {
@@ -1470,6 +1343,7 @@ public class SecurityHeadersTab extends JPanel {
             if (viewRow < 0) {
                 requestArea.setText("");
                 responseArea.setText("");
+                tcPolicyDetailArea.setText("");
                 reqLabel.setText("  REQUEST");
                 respLabel.setText("  RESPONSE");
                 if (detailShown[0]) {
@@ -1493,6 +1367,18 @@ public class SecurityHeadersTab extends JPanel {
             responseArea.setText(respText != null ? respText : "(No response data captured)");
             requestArea.setCaretPosition(0);
             responseArea.setCaretPosition(0);
+
+            HeaderResult matchedHr = findHeaderResultForEndpoint(r.endpointKey());
+            if (matchedHr != null) {
+                PolicyProfile active = policyStore.getActive();
+                PolicyEvaluationResult evalResult = active != null
+                        ? policyEvaluator.evaluate(matchedHr, active)
+                        : PolicyEvaluationResult.notEvaluated();
+                tcPolicyDetailArea.setText(formatPolicyEvaluation(evalResult));
+            } else {
+                tcPolicyDetailArea.setText(formatPolicyEvaluation(null));
+            }
+            tcPolicyDetailArea.setCaretPosition(0);
 
             if (!detailShown[0]) {
                 contentWrapper.removeAll();
@@ -1574,6 +1460,7 @@ public class SecurityHeadersTab extends JPanel {
         applyCenterRenderer(table, 11);
         applyCenterRenderer(table, 12);
         applyCenterRenderer(table, 13);
+        applyComplianceRenderer(table, 14);
 
         JScrollPane tableSp = new JScrollPane(table);
         tableSp.setBorder(BorderFactory.createLineBorder(BORDER));
@@ -1653,8 +1540,15 @@ public class SecurityHeadersTab extends JPanel {
             @Override public void mouseExited(MouseEvent e) { closeDetailBtn.setForeground(TXT_M); }
         });
 
+        JToggleButton wrapToggle = createWrapToggle(requestArea, responseArea);
+
+        JPanel detailRightBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        detailRightBtns.setOpaque(false);
+        detailRightBtns.add(wrapToggle);
+        detailRightBtns.add(closeDetailBtn);
+
         detailHeaderBar.add(detailTitle, BorderLayout.WEST);
-        detailHeaderBar.add(closeDetailBtn, BorderLayout.EAST);
+        detailHeaderBar.add(detailRightBtns, BorderLayout.EAST);
 
         detailWrapper.add(detailHeaderBar, BorderLayout.NORTH);
         detailWrapper.add(reqRespSplit, BorderLayout.CENTER);
@@ -1747,6 +1641,36 @@ public class SecurityHeadersTab extends JPanel {
         area.setMargin(new Insets(6, 8, 6, 8));
         area.setLineWrap(false);
         return area;
+    }
+
+    private JToggleButton createWrapToggle(JTextArea... areas) {
+        JToggleButton btn = new JToggleButton("Wrap");
+        btn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        btn.setForeground(TXT_M);
+        btn.setBackground(BG2);
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setContentAreaFilled(false);
+        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btn.setBorder(new EmptyBorder(2, 10, 2, 10));
+        btn.setToolTipText("Toggle word wrap");
+        btn.addActionListener(e -> {
+            boolean wrap = btn.isSelected();
+            btn.setForeground(wrap ? ACCENT : TXT_M);
+            for (JTextArea area : areas) {
+                area.setLineWrap(wrap);
+                area.setWrapStyleWord(wrap);
+            }
+        });
+        btn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) {
+                if (!btn.isSelected()) btn.setForeground(TXT2);
+            }
+            @Override public void mouseExited(MouseEvent e) {
+                btn.setForeground(btn.isSelected() ? ACCENT : TXT_M);
+            }
+        });
+        return btn;
     }
 
     private void addDetailArrowNav(JTable table, JTextArea requestArea, JTextArea responseArea) {
@@ -1989,6 +1913,557 @@ public class SecurityHeadersTab extends JPanel {
             return this;
         }
     }
+
+    // ─── Policies Panel ──────────────────────────────────────────────────────
+
+    private JPanel createPoliciesPanel() {
+        JPanel panel = new JPanel(new BorderLayout(0, 8));
+        panel.setBackground(BG);
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        // --- Profile list table model ---
+        String[] profileCols = {"Name", "Active", "Rules", "Version"};
+        javax.swing.table.DefaultTableModel profileModel = new javax.swing.table.DefaultTableModel(profileCols, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+            @Override public Class<?> getColumnClass(int c) { return String.class; }
+        };
+
+        Runnable refreshProfiles = () -> {
+            profileModel.setRowCount(0);
+            for (PolicyProfile p : policyStore.getAll()) {
+                profileModel.addRow(new Object[]{
+                    p.name(),
+                    p.active() ? "YES" : "",
+                    String.valueOf(p.enabledRuleCount()),
+                    "v" + p.version()
+                });
+            }
+        };
+
+        JTable profileTable = new JTable(profileModel);
+        styleTable(profileTable);
+        javax.swing.table.DefaultTableCellRenderer centerRenderer = new javax.swing.table.DefaultTableCellRenderer();
+        centerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+        for (int i = 0; i < profileTable.getColumnCount(); i++) {
+            profileTable.getColumnModel().getColumn(i).setCellRenderer(centerRenderer);
+        }
+        profileTable.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+        JScrollPane profileSp = new JScrollPane(profileTable);
+        profileSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        profileSp.getViewport().setBackground(TBL_EVEN);
+        profileSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        profileSp.setPreferredSize(new Dimension(300, 0));
+
+        // --- Button bar ---
+        JPanel btnBar = new JPanel(new BorderLayout());
+        btnBar.setBackground(BG2);
+        btnBar.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+        JPanel btnLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        btnLeft.setOpaque(false);
+        JPanel btnRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        btnRight.setOpaque(false);
+
+        JButton createBtn = styledButton("Create");
+        JButton defaultBtn = styledButton("Add Default");
+        JButton duplicateBtn = styledButton("Duplicate");
+        JButton deleteBtn = styledButton("Delete");
+
+        JButton activateBtn = styledButton("Activate");
+        activateBtn.setBackground(ACCENT_DIM);
+        activateBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { activateBtn.setBackground(ACCENT); }
+            @Override public void mouseExited(MouseEvent e) { activateBtn.setBackground(ACCENT_DIM); }
+        });
+
+        JButton deactivateBtn = styledButton("Deactivate");
+        deactivateBtn.setBackground(RED_BG);
+        deactivateBtn.setForeground(RED_FG);
+        deactivateBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { deactivateBtn.setBackground(new Color(60, 28, 32)); }
+            @Override public void mouseExited(MouseEvent e) { deactivateBtn.setBackground(RED_BG); }
+        });
+
+        btnLeft.add(createBtn);
+        btnLeft.add(defaultBtn);
+        btnLeft.add(duplicateBtn);
+        btnLeft.add(deleteBtn);
+        btnRight.add(activateBtn);
+        btnRight.add(deactivateBtn);
+        btnBar.add(btnLeft, BorderLayout.WEST);
+        btnBar.add(btnRight, BorderLayout.EAST);
+
+        // --- Editor panel (right side) ---
+        JPanel editorPanel = new JPanel(new BorderLayout(0, 8));
+        editorPanel.setBackground(BG);
+        editorPanel.setBorder(new EmptyBorder(0, 10, 0, 0));
+
+        JLabel editorTitle = new JLabel("Policy Editor");
+        editorTitle.setFont(new Font("SansSerif", Font.BOLD, 14));
+        editorTitle.setForeground(ACCENT);
+
+        JPanel formPanel = new JPanel();
+        formPanel.setLayout(new BoxLayout(formPanel, BoxLayout.Y_AXIS));
+        formPanel.setBackground(BG);
+
+        JTextField nameField = darkField(20);
+        JTextField descField = darkField(30);
+
+        JCheckBox hstsEnabled = darkCheckBox("HSTS");
+        JTextField hstsMinAge = darkField(10);
+        hstsMinAge.setText("31536000");
+        JCheckBox hstsSubdomains = darkCheckBox("Require includeSubDomains");
+        JCheckBox hstsPreload = darkCheckBox("Require preload");
+
+        JCheckBox ccEnabled = darkCheckBox("Cache-Control");
+        JPanel ccConditionsPanel = new JPanel();
+        ccConditionsPanel.setLayout(new BoxLayout(ccConditionsPanel, BoxLayout.Y_AXIS));
+        ccConditionsPanel.setBackground(BG);
+        List<JPanel> ccConditionRows = new ArrayList<>();
+        List<JTextField[]> ccConditionFields = new ArrayList<>();
+
+        Runnable addCcConditionRow = () -> {
+            JPanel row = new JPanel();
+            row.setLayout(new BoxLayout(row, BoxLayout.Y_AXIS));
+            row.setBackground(BG_ELEV);
+            row.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
+                    new EmptyBorder(6, 8, 6, 8)));
+
+            JTextField labelF = darkField(10);
+            labelF.setToolTipText("Label (e.g. Static, HTML, API)");
+            JTextField ctF = darkField(18);
+            ctF.setToolTipText("Content-Type patterns, comma-separated (e.g. image/*,text/css). Leave empty for default/fallback.");
+            JTextField reqF = darkField(18);
+            reqF.setToolTipText("Comma-separated required directives (e.g. no-store,no-cache)");
+            JTextField prohF = darkField(18);
+            prohF.setToolTipText("Comma-separated prohibited directives (e.g. public)");
+
+            JButton removeBtn = new JButton("Remove");
+            removeBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            removeBtn.setForeground(RED_FG);
+            removeBtn.setBackground(BG);
+            removeBtn.setBorderPainted(false);
+            removeBtn.setFocusPainted(false);
+            removeBtn.setContentAreaFilled(false);
+            removeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+            JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+            topRow.setOpaque(false);
+            topRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+            JLabel lbl1 = new JLabel("Label:"); lbl1.setForeground(TXT2); lbl1.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            JLabel lbl2 = new JLabel("Content-Type:"); lbl2.setForeground(TXT2); lbl2.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            topRow.add(lbl1); topRow.add(labelF);
+            topRow.add(Box.createHorizontalStrut(6));
+            topRow.add(lbl2); topRow.add(ctF);
+            topRow.add(Box.createHorizontalStrut(6));
+            topRow.add(removeBtn);
+
+            JPanel bottomRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+            bottomRow.setOpaque(false);
+            bottomRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+            JLabel lbl3 = new JLabel("Required:"); lbl3.setForeground(TXT2); lbl3.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            JLabel lbl4 = new JLabel("Prohibited:"); lbl4.setForeground(TXT2); lbl4.setFont(new Font("SansSerif", Font.PLAIN, 11));
+            bottomRow.add(lbl3); bottomRow.add(reqF);
+            bottomRow.add(Box.createHorizontalStrut(6));
+            bottomRow.add(lbl4); bottomRow.add(prohF);
+
+            row.add(topRow);
+            row.add(Box.createVerticalStrut(2));
+            row.add(bottomRow);
+
+            JTextField[] fields = {labelF, ctF, reqF, prohF};
+            ccConditionRows.add(row);
+            ccConditionFields.add(fields);
+            ccConditionsPanel.add(row);
+            ccConditionsPanel.add(Box.createVerticalStrut(4));
+            ccConditionsPanel.revalidate();
+            ccConditionsPanel.repaint();
+
+            removeBtn.addActionListener(ev2 -> {
+                int idx = ccConditionRows.indexOf(row);
+                if (idx >= 0) {
+                    ccConditionRows.remove(idx);
+                    ccConditionFields.remove(idx);
+                    ccConditionsPanel.remove(row);
+                    ccConditionsPanel.revalidate();
+                    ccConditionsPanel.repaint();
+                }
+            });
+        };
+
+        JButton addConditionBtn = styledButton("+ Add Condition");
+        addConditionBtn.addActionListener(ev -> addCcConditionRow.run());
+
+        JCheckBox xfoEnabled = darkCheckBox("X-Frame-Options");
+        JTextField xfoAllowed = darkField(20);
+        xfoAllowed.setToolTipText("Comma-separated allowed values (e.g. DENY,SAMEORIGIN)");
+
+        JCheckBox xctoEnabled = darkCheckBox("X-Content-Type-Options");
+        JTextField xctoExpected = darkField(15);
+        xctoExpected.setText("nosniff");
+
+        JCheckBox acaoEnabled = darkCheckBox("ACAO");
+        JTextField acaoOrigins = darkField(25);
+        acaoOrigins.setToolTipText("Comma-separated allowed origins (e.g. https://example.com)");
+        JCheckBox acaoWildcard = darkCheckBox("Allow wildcard (*)");
+        JCheckBox acaoNull = darkCheckBox("Allow null");
+
+        JButton saveBtn = styledButton("Save Policy");
+        JLabel editorStatus = new JLabel(" ");
+        editorStatus.setForeground(GREEN_FG);
+        editorStatus.setFont(new Font("SansSerif", Font.PLAIN, 12));
+
+        // Layout the form
+        formPanel.add(formRow("Name:", nameField));
+        formPanel.add(formRow("Description:", descField));
+        formPanel.add(Box.createVerticalStrut(10));
+        formPanel.add(sectionLabel("HSTS"));
+        formPanel.add(checkRow(hstsEnabled));
+        formPanel.add(formRow("  max-age:", hstsMinAge));
+        formPanel.add(checkRow(hstsSubdomains));
+        formPanel.add(checkRow(hstsPreload));
+        formPanel.add(Box.createVerticalStrut(8));
+        formPanel.add(sectionLabel("Cache-Control"));
+        formPanel.add(checkRow(ccEnabled));
+        formPanel.add(Box.createVerticalStrut(4));
+        formPanel.add(ccConditionsPanel);
+        formPanel.add(Box.createVerticalStrut(6));
+        JPanel addCondBtnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        addCondBtnRow.setBackground(BG);
+        addCondBtnRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        addCondBtnRow.add(addConditionBtn);
+        formPanel.add(addCondBtnRow);
+        formPanel.add(Box.createVerticalStrut(8));
+        formPanel.add(sectionLabel("X-Frame-Options"));
+        formPanel.add(checkRow(xfoEnabled));
+        formPanel.add(formRow("  Allowed:", xfoAllowed));
+        formPanel.add(Box.createVerticalStrut(8));
+        formPanel.add(sectionLabel("X-Content-Type-Options"));
+        formPanel.add(checkRow(xctoEnabled));
+        formPanel.add(formRow("  Expected:", xctoExpected));
+        formPanel.add(Box.createVerticalStrut(8));
+        formPanel.add(sectionLabel("ACAO"));
+        formPanel.add(checkRow(acaoEnabled));
+        formPanel.add(formRow("  Origins:", acaoOrigins));
+        formPanel.add(checkRow(acaoWildcard));
+        formPanel.add(checkRow(acaoNull));
+        formPanel.add(Box.createVerticalStrut(12));
+
+        JPanel saveBtnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        saveBtnRow.setBackground(BG);
+        saveBtnRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        saveBtnRow.add(saveBtn);
+        saveBtnRow.add(editorStatus);
+        formPanel.add(saveBtnRow);
+
+        JScrollPane formSp = new JScrollPane(formPanel);
+        formSp.setBorder(BorderFactory.createLineBorder(BORDER));
+        formSp.getViewport().setBackground(BG);
+        formSp.getVerticalScrollBar().setUI(new DarkScrollBarUI());
+        formSp.getHorizontalScrollBar().setUI(new DarkScrollBarUI());
+
+        editorPanel.add(editorTitle, BorderLayout.NORTH);
+        editorPanel.add(formSp, BorderLayout.CENTER);
+
+        // --- Load profile into editor ---
+        final String[] editingProfileId = {null};
+
+        Runnable loadSelectedProfile = () -> {
+            int row = profileTable.getSelectedRow();
+            if (row < 0) return;
+            List<PolicyProfile> all = policyStore.getAll();
+            if (row >= all.size()) return;
+            PolicyProfile p = all.get(row);
+            editingProfileId[0] = p.id();
+            nameField.setText(p.name());
+            descField.setText(p.description() != null ? p.description() : "");
+
+            PolicyRule hsts = p.getRule("strict-transport-security");
+            if (hsts != null) {
+                hstsEnabled.setSelected(hsts.enabled());
+                hstsMinAge.setText(String.valueOf(hsts.minMaxAge()));
+                hstsSubdomains.setSelected(hsts.requireIncludeSubDomains());
+                hstsPreload.setSelected(hsts.requirePreload());
+            } else {
+                hstsEnabled.setSelected(false);
+                hstsMinAge.setText("31536000");
+                hstsSubdomains.setSelected(false);
+                hstsPreload.setSelected(false);
+            }
+
+            PolicyRule cc = p.getRule("cache-control");
+            ccConditionRows.clear();
+            ccConditionFields.clear();
+            ccConditionsPanel.removeAll();
+            if (cc != null) {
+                ccEnabled.setSelected(cc.enabled());
+                if (cc.hasConditions()) {
+                    for (CacheControlCondition c : cc.cacheControlConditions()) {
+                        addCcConditionRow.run();
+                        JTextField[] f = ccConditionFields.get(ccConditionFields.size() - 1);
+                        f[0].setText(c.label());
+                        f[1].setText(String.join(",", c.contentTypePatterns()));
+                        f[2].setText(String.join(",", c.requiredDirectives()));
+                        f[3].setText(String.join(",", c.prohibitedDirectives()));
+                    }
+                } else if (!cc.requiredDirectives().isEmpty() || !cc.prohibitedDirectives().isEmpty()) {
+                    addCcConditionRow.run();
+                    JTextField[] f = ccConditionFields.get(0);
+                    f[0].setText("default");
+                    f[1].setText("");
+                    f[2].setText(String.join(",", cc.requiredDirectives()));
+                    f[3].setText(String.join(",", cc.prohibitedDirectives()));
+                }
+            } else {
+                ccEnabled.setSelected(false);
+            }
+            ccConditionsPanel.revalidate();
+            ccConditionsPanel.repaint();
+
+            PolicyRule xfo = p.getRule("x-frame-options");
+            if (xfo != null) {
+                xfoEnabled.setSelected(xfo.enabled());
+                xfoAllowed.setText(String.join(",", xfo.allowedValues()));
+            } else {
+                xfoEnabled.setSelected(false);
+                xfoAllowed.setText("");
+            }
+
+            PolicyRule xcto = p.getRule("x-content-type-options");
+            if (xcto != null) {
+                xctoEnabled.setSelected(xcto.enabled());
+                xctoExpected.setText(xcto.expectedValue() != null ? xcto.expectedValue() : "");
+            } else {
+                xctoEnabled.setSelected(false);
+                xctoExpected.setText("nosniff");
+            }
+
+            PolicyRule acao = p.getRule("access-control-allow-origin");
+            if (acao != null) {
+                acaoEnabled.setSelected(acao.enabled());
+                acaoOrigins.setText(String.join(",", acao.allowedOrigins()));
+                acaoWildcard.setSelected(acao.allowWildcard());
+                acaoNull.setSelected(acao.allowNull());
+            } else {
+                acaoEnabled.setSelected(false);
+                acaoOrigins.setText("");
+                acaoWildcard.setSelected(false);
+                acaoNull.setSelected(false);
+            }
+            editorStatus.setText(" ");
+        };
+
+        profileTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) loadSelectedProfile.run();
+        });
+
+        // --- Save button ---
+        saveBtn.addActionListener(ev -> {
+            if (editingProfileId[0] == null) {
+                editorStatus.setForeground(RED_FG);
+                editorStatus.setText("No profile selected.");
+                return;
+            }
+            PolicyProfile p = policyStore.getById(editingProfileId[0]);
+            if (p == null) {
+                editorStatus.setForeground(RED_FG);
+                editorStatus.setText("Profile not found.");
+                return;
+            }
+            p.setName(nameField.getText().trim());
+            p.setDescription(descField.getText().trim());
+
+            long minAge;
+            try { minAge = Long.parseLong(hstsMinAge.getText().trim()); }
+            catch (NumberFormatException ex) { minAge = 31536000; }
+            p.putRule(PolicyRule.hsts(hstsEnabled.isSelected(), minAge,
+                    hstsSubdomains.isSelected(), hstsPreload.isSelected()));
+            if (!ccConditionFields.isEmpty()) {
+                List<CacheControlCondition> conditions = new ArrayList<>();
+                for (JTextField[] f : ccConditionFields) {
+                    conditions.add(new CacheControlCondition(
+                            f[0].getText().trim(),
+                            splitCsv(f[1].getText()),
+                            splitCsv(f[2].getText()),
+                            splitCsv(f[3].getText())));
+                }
+                p.putRule(PolicyRule.cacheControl(ccEnabled.isSelected(), conditions));
+            } else {
+                p.putRule(PolicyRule.cacheControl(ccEnabled.isSelected(), List.of(), List.of()));
+            }
+            p.putRule(PolicyRule.xFrameOptions(xfoEnabled.isSelected(),
+                    splitCsv(xfoAllowed.getText())));
+            p.putRule(PolicyRule.xContentTypeOptions(xctoEnabled.isSelected(),
+                    xctoExpected.getText().trim()));
+            p.putRule(PolicyRule.acao(acaoEnabled.isSelected(),
+                    splitCsv(acaoOrigins.getText()), acaoWildcard.isSelected(), acaoNull.isSelected()));
+
+            List<String> errors = p.validate();
+            if (!errors.isEmpty()) {
+                editorStatus.setForeground(RED_FG);
+                editorStatus.setText(errors.get(0));
+                return;
+            }
+            policyStore.update(p);
+            refreshProfiles.run();
+            editorStatus.setForeground(GREEN_FG);
+            editorStatus.setText("Saved v" + p.version());
+        });
+
+        // --- Create ---
+        createBtn.addActionListener(ev -> {
+            String name = JOptionPane.showInputDialog(panel, "Policy name:", "Create Policy",
+                    JOptionPane.PLAIN_MESSAGE);
+            if (name == null || name.isBlank()) return;
+            PolicyProfile p = new PolicyProfile(name.trim(), "");
+            p.putRule(PolicyRule.hsts(true, 31536000, true, false));
+            p.putRule(PolicyRule.cacheControl(true, List.of("no-store"), List.of()));
+            p.putRule(PolicyRule.xFrameOptions(true, List.of("DENY", "SAMEORIGIN")));
+            p.putRule(PolicyRule.xContentTypeOptions(true, "nosniff"));
+            p.putRule(PolicyRule.acao(true, List.of(), false, false));
+            policyStore.add(p);
+            refreshProfiles.run();
+            profileTable.setRowSelectionInterval(profileModel.getRowCount() - 1, profileModel.getRowCount() - 1);
+        });
+
+        // --- Add Default ---
+        defaultBtn.addActionListener(ev -> {
+            PolicyProfile d = PolicyProfile.defaultBaseline();
+            policyStore.add(d);
+            refreshProfiles.run();
+            profileTable.setRowSelectionInterval(profileModel.getRowCount() - 1, profileModel.getRowCount() - 1);
+        });
+
+        // --- Duplicate ---
+        duplicateBtn.addActionListener(ev -> {
+            int row = profileTable.getSelectedRow();
+            if (row < 0) return;
+            List<PolicyProfile> all = policyStore.getAll();
+            if (row >= all.size()) return;
+            PolicyProfile orig = all.get(row);
+            PolicyProfile dup = orig.duplicate(orig.name() + " (copy)");
+            policyStore.add(dup);
+            refreshProfiles.run();
+            profileTable.setRowSelectionInterval(profileModel.getRowCount() - 1, profileModel.getRowCount() - 1);
+        });
+
+        // --- Activate ---
+        activateBtn.addActionListener(ev -> {
+            int row = profileTable.getSelectedRow();
+            if (row < 0) return;
+            List<PolicyProfile> all = policyStore.getAll();
+            if (row >= all.size()) return;
+            policyStore.activate(all.get(row).id());
+            refreshProfiles.run();
+        });
+
+        // --- Deactivate ---
+        deactivateBtn.addActionListener(ev -> {
+            policyStore.deactivateAll();
+            refreshProfiles.run();
+        });
+
+        // --- Delete ---
+        deleteBtn.addActionListener(ev -> {
+            int row = profileTable.getSelectedRow();
+            if (row < 0) return;
+            List<PolicyProfile> all = policyStore.getAll();
+            if (row >= all.size()) return;
+            PolicyProfile p = all.get(row);
+            int confirm = JOptionPane.showConfirmDialog(panel,
+                    "Delete policy \"" + p.name() + "\"?", "Confirm Delete",
+                    JOptionPane.YES_NO_OPTION);
+            if (confirm == JOptionPane.YES_OPTION) {
+                policyStore.remove(p.id());
+                editingProfileId[0] = null;
+                refreshProfiles.run();
+            }
+        });
+
+        // --- Layout ---
+        JPanel leftPanel = new JPanel(new BorderLayout());
+        leftPanel.setBackground(BG);
+        leftPanel.add(btnBar, BorderLayout.NORTH);
+        leftPanel.add(profileSp, BorderLayout.CENTER);
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, editorPanel);
+        split.setResizeWeight(0.35);
+        split.setDividerSize(4);
+        split.setBackground(BG);
+        split.setBorder(null);
+
+        panel.add(split, BorderLayout.CENTER);
+
+        refreshProfiles.run();
+        return panel;
+    }
+
+    private static List<String> splitCsv(String text) {
+        if (text == null || text.isBlank()) return List.of();
+        return Arrays.stream(text.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    private JPanel formRow(String labelText, JComponent field) {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        row.setBackground(BG);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+        JLabel l = new JLabel(labelText);
+        l.setForeground(TXT2);
+        l.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        row.add(l);
+        row.add(field);
+        return row;
+    }
+
+    private JPanel checkRow(JCheckBox cb) {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 1));
+        row.setBackground(BG);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+        row.add(cb);
+        return row;
+    }
+
+    private JPanel sectionLabel(String text) {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        row.setBackground(BG);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
+        JLabel l = new JLabel(text);
+        l.setForeground(ACCENT);
+        l.setFont(new Font("SansSerif", Font.BOLD, 13));
+        row.add(l);
+        return row;
+    }
+
+    private JCheckBox darkCheckBox(String text) {
+        JCheckBox cb = new JCheckBox(text);
+        cb.setBackground(BG);
+        cb.setForeground(TXT);
+        cb.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        cb.setFocusPainted(false);
+        return cb;
+    }
+
+    private JButton styledButton(String text) {
+        JButton btn = new JButton(text);
+        btn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        btn.setForeground(TXT);
+        btn.setBackground(BTN_MUTED);
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btn.setBorder(new EmptyBorder(6, 14, 6, 14));
+        btn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { btn.setBackground(BTN_MUTED_H); }
+            @Override public void mouseExited(MouseEvent e) { btn.setBackground(BTN_MUTED); }
+        });
+        return btn;
+    }
+
+    // ─── Scope & Export Panel ─────────────────────────────────────────────────
 
     private JPanel createScopeExportPanel() {
         JPanel panel = new JPanel(new BorderLayout(0, 12));
@@ -2264,22 +2739,12 @@ public class SecurityHeadersTab extends JPanel {
                 }
             }
 
-            // Update Endpoint Summary host combo
-            Set<String> epHosts = all.stream().map(HeaderResult::host).collect(Collectors.toCollection(TreeSet::new));
-            String selectedEpHost = (String) epHostCombo.getSelectedItem();
-            epHostCombo.removeAllItems();
-            epHostCombo.addItem("None");
-            epHosts.forEach(epHostCombo::addItem);
-            if (selectedEpHost != null && epHosts.contains(selectedEpHost)) {
-                epHostCombo.setSelectedItem(selectedEpHost);
-            }
         } finally {
             refreshingCombos = false;
         }
 
         applyRawFilters();
         applyHostFilters();
-        applyEpFilters();
         refreshDashboard();
     }
 
@@ -2374,7 +2839,8 @@ public class SecurityHeadersTab extends JPanel {
     private void applyRawFilters() {
         List<HeaderResult> all = resultStore.getAll();
         FilterState fs = buildRawFilterState();
-        currentFiltered = filterService.apply(all, fs);
+        rawTableModel.setPolicyContext(policyEvaluator, policyStore.getActive());
+        currentFiltered = filterService.apply(all, fs, rawTableModel::getComplianceStatus);
         rawTableModel.setTestcaseCounts(tcResultStore.getAll(), library.size(), library);
         rawTableModel.setData(currentFiltered);
         rawFilterIndicator.setText(fs.isActive() ? "Filtered" : "");
@@ -2391,6 +2857,7 @@ public class SecurityHeadersTab extends JPanel {
 
     private void applyTcFilters() {
         List<TestcaseResult> all = tcResultStore.getAll();
+        tcTableModel.setPolicyContext(policyEvaluator, policyStore.getActive(), this::findHeaderResultForEndpoint);
 
         String pathFilter = tcPathField.getText().trim().toLowerCase();
         String hostFilter = tcHostCombo.getSelectedIndex() <= 0 ? null : (String) tcHostCombo.getSelectedItem();
@@ -2439,6 +2906,7 @@ public class SecurityHeadersTab extends JPanel {
         rawHostCombo.setSelectedIndex(0);
         rawStatusCombo.setSelectedIndex(0);
         rawHeaderCombo.setSelectedIndex(0);
+        rawPolicyCombo.setSelectedIndex(0);
         applyRawFilters();
     }
 
@@ -2476,38 +2944,6 @@ public class SecurityHeadersTab extends JPanel {
         hostFilterIndicator.setText(active ? "Filtered" : "");
     }
 
-    private void applyEpFilters() {
-        List<EndpointSummary> all = summaryService.computeEndpointSummaries(resultStore.getAll());
-        String search = epSearchField.getText().trim().toLowerCase();
-        String hostFilter = epHostCombo.getSelectedIndex() <= 0 ? null : (String) epHostCombo.getSelectedItem();
-        int headerIdx = epHeaderCombo.getSelectedIndex();
-
-        List<EndpointSummary> filtered = all.stream().filter(ep -> {
-            if (!search.isEmpty()
-                    && !ep.host().toLowerCase().contains(search)
-                    && !ep.pathAndQuery().toLowerCase().contains(search)) return false;
-            if (hostFilter != null && !ep.host().equalsIgnoreCase(hostFilter)) return false;
-            return switch (headerIdx) {
-                case 1 -> ep.responsesWithMissing() > 0;
-                case 2 -> ep.hstsMissing() > 0 && ep.cacheControlMissing() > 0
-                        && ep.xfoMissing() > 0 && ep.xctoMissing() > 0
-                        && ep.acaoMissing() > 0 && ep.cspMissing() > 0;
-                case 3 -> ep.hstsMissing() > 0;
-                case 4 -> ep.cacheControlMissing() > 0;
-                case 5 -> ep.xfoMissing() > 0;
-                case 6 -> ep.xctoMissing() > 0;
-                case 7 -> ep.acaoMissing() > 0;
-                case 8 -> ep.cspMissing() > 0;
-                default -> true;
-            };
-        }).collect(Collectors.toList());
-
-        epTableModel.setTestcaseCounts(tcResultStore.getAll(), library.size(), library);
-        epTableModel.setData(filtered);
-        boolean active = !search.isEmpty() || hostFilter != null || headerIdx > 0;
-        epFilterIndicator.setText(active ? "Filtered" : "");
-    }
-
     private void applyCatalogSearch() {
         String cat = (String) catalogCategoryCombo.getSelectedItem();
         catalogModel.applyFilter(catalogSearchField.getText(), cat);
@@ -2519,7 +2955,9 @@ public class SecurityHeadersTab extends JPanel {
     }
 
     private FilterState buildRawFilterState() {
-        return buildFilterState(rawSearchField, rawHostCombo, rawStatusCombo, rawHeaderCombo);
+        FilterState base = buildFilterState(rawSearchField, rawHostCombo, rawStatusCombo, rawHeaderCombo);
+        String policyFilter = rawPolicyCombo.getSelectedIndex() <= 0 ? null : (String) rawPolicyCombo.getSelectedItem();
+        return new FilterState(base.searchText(), base.hostFilter(), base.statusCodes(), base.headerFilter(), policyFilter);
     }
 
     private FilterState buildRepeaterFilterState() {
@@ -2625,6 +3063,88 @@ public class SecurityHeadersTab extends JPanel {
         sep = raw.indexOf("\n\n");
         if (sep >= 0) return raw.substring(0, sep);
         return raw;
+    }
+
+    private String formatPolicyEvaluation(PolicyEvaluationResult eval) {
+        if (eval == null || eval.overallStatus() == PolicyComplianceStatus.NOT_EVALUATED) {
+            return "<html><body style='font-family:SansSerif;color:#828898;padding:10px;'>"
+                    + "No active policy or evaluation not available.</body></html>";
+        }
+
+        String overallColor = switch (eval.overallStatus()) {
+            case PASS -> "#4caf6e";
+            case FAIL -> "#d25f64";
+            case NA -> "#828898";
+            default -> "#828898";
+        };
+        String overallLabel = eval.overallStatus().displayLabel();
+        String policyName = eval.policyName() != null ? htmlEscape(eval.policyName()) : "Policy";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<html><head><style>");
+        sb.append("body{font-family:SansSerif;color:#c8ccd4;margin:0;padding:6px 8px;background:#1a1c23;}");
+        sb.append(".policy-name{font-size:10px;color:#828898;margin-bottom:2px;}");
+        sb.append(".header{font-size:11px;margin-bottom:6px;}");
+        sb.append(".badge{display:inline;padding:1px 6px;border-radius:3px;font-weight:bold;font-size:9px;color:#fff;}");
+        sb.append(".card{background:#1c1f26;border:1px solid #2e3340;border-radius:3px;padding:5px 8px;margin-bottom:4px;}");
+        sb.append(".hdr-name{font-weight:bold;font-size:10px;color:#c8ccd4;}");
+        sb.append(".lbl{color:#828898;font-size:9px;}");
+        sb.append(".val{color:#c8ccd4;font-size:9px;font-family:monospace;}");
+        sb.append(".pass{color:#4caf6e;font-weight:bold;font-size:9px;}");
+        sb.append(".fail{color:#d25f64;font-weight:bold;font-size:9px;}");
+        sb.append(".na{color:#828898;font-size:9px;}");
+        sb.append("</style></head><body>");
+
+        sb.append("<div class='policy-name'>Policy: <b style='color:#5892f0;'>").append(policyName).append("</b></div>");
+        sb.append("<div class='header'>Policy Compliance")
+          .append(" &nbsp;<span class='badge' style='background:").append(overallColor).append(";'>")
+          .append(overallLabel).append("</span></div>");
+
+        for (PolicyRuleResult rule : eval.ruleResults()) {
+            String statusClass = switch (rule.status()) {
+                case PASS -> "pass";
+                case FAIL -> "fail";
+                default -> "na";
+            };
+            String statusText = switch (rule.status()) {
+                case PASS -> "&#10003; PASS";
+                case FAIL -> "&#10007; FAIL";
+                case NA -> "N/A";
+                default -> "—";
+            };
+
+            sb.append("<div class='card'>");
+            sb.append("<table width='100%' cellpadding='0' cellspacing='0'><tr>");
+            sb.append("<td class='hdr-name'>").append(htmlEscape(rule.headerName())).append("</td>");
+            sb.append("<td align='right' class='").append(statusClass).append("'>").append(statusText).append("</td>");
+            sb.append("</tr></table>");
+
+            if (rule.expectedDescription() != null) {
+                sb.append("<div style='margin-top:3px;'><span class='lbl'>Expected: </span>");
+                sb.append("<span class='val'>").append(htmlEscape(rule.expectedDescription())).append("</span></div>");
+            }
+            if (rule.actualValue() != null) {
+                sb.append("<div style='margin-top:1px;'><span class='lbl'>Actual: </span>");
+                sb.append("<span class='val'>").append(htmlEscape(rule.actualValue())).append("</span></div>");
+            }
+            sb.append("</div>");
+        }
+
+        sb.append("</body></html>");
+        return sb.toString();
+    }
+
+    private static String htmlEscape(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    }
+
+    private HeaderResult findHeaderResultForEndpoint(String endpointKey) {
+        if (endpointKey == null) return null;
+        List<HeaderResult> all = resultStore.getAll();
+        for (int i = all.size() - 1; i >= 0; i--) {
+            if (endpointKey.equals(all.get(i).endpointKey())) return all.get(i);
+        }
+        return null;
     }
 
     // ─── Table styling ───────────────────────────────────────────────────────
@@ -2886,6 +3406,29 @@ public class SecurityHeadersTab extends JPanel {
         table.getColumnModel().getColumn(col).setCellRenderer(r);
     }
 
+    private void applyComplianceRenderer(JTable table, int col) {
+        DefaultTableCellRenderer r = new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable t, Object val,
+                    boolean sel, boolean foc, int row, int column) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(t, val, sel, foc, row, column);
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                l.setOpaque(true);
+                l.setFont(new Font("SansSerif", Font.BOLD, 12));
+                l.setBorder(new EmptyBorder(4, 4, 4, 4));
+                if (!sel && val instanceof String s) {
+                    switch (s) {
+                        case "PASS" -> { l.setBackground(GREEN_BG); l.setForeground(GREEN_FG); }
+                        case "FAIL" -> { l.setBackground(RED_BG); l.setForeground(RED_FG); }
+                        case "N/A" -> { l.setBackground(row % 2 == 0 ? TBL_EVEN : TBL_ODD); l.setForeground(TXT_M); }
+                        default -> { l.setBackground(row % 2 == 0 ? TBL_EVEN : TBL_ODD); l.setForeground(TXT_M); l.setText("—"); }
+                    }
+                } else if (sel) { l.setBackground(TBL_SEL); l.setForeground(TXT); }
+                return l;
+            }
+        };
+        table.getColumnModel().getColumn(col).setCellRenderer(r);
+    }
+
     // ─── Scope cards ─────────────────────────────────────────────────────────
 
 
@@ -3013,14 +3556,6 @@ public class SecurityHeadersTab extends JPanel {
                 g2.dispose();
             }
         };
-    }
-
-    private JLabel sectionLabel(String text) {
-        JLabel l = new JLabel(text);
-        l.setFont(new Font("SansSerif", Font.BOLD, 13));
-        l.setForeground(TXT_M);
-        l.setBorder(new EmptyBorder(0, 2, 6, 0));
-        return l;
     }
 
     private JTextField darkField(int cols) {

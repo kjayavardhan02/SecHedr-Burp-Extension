@@ -1,19 +1,27 @@
 package com.securityheaders;
 
+import com.securityheaders.policy.PolicyComplianceStatus;
+import com.securityheaders.policy.PolicyEvaluationResult;
+import com.securityheaders.policy.PolicyEvaluator;
+import com.securityheaders.policy.PolicyProfile;
 import com.securityheaders.testcase.TestcaseDefinition;
 import com.securityheaders.testcase.TestcaseLibrary;
 import com.securityheaders.testcase.TestcaseResult;
 
 import javax.swing.table.AbstractTableModel;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
 
 public class TestcaseResultsTableModel extends AbstractTableModel {
 
     private static final String[] COLUMNS = {
         "Testcase", "Description", "Host", "Path", "Status Code", "Mode",
-        "HSTS", "Cache-Control", "XFO", "XCTO", "ACAO", "ACAO Checks", "CSP"
+        "HSTS", "Cache-Control", "XFO", "XCTO", "ACAO", "ACAO Checks", "CSP",
+        "Policy Compliance"
     };
 
     private static final String[] HEADER_KEYS = {
@@ -24,8 +32,41 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
     private final TestcaseLibrary library;
     private List<TestcaseResult> data = new ArrayList<>();
 
+    private Function<String, HeaderResult> headerResultLookup;
+    private PolicyEvaluator policyEvaluator;
+    private PolicyProfile activePolicy;
+    private final Map<String, PolicyEvaluationResult> evalCache = new HashMap<>();
+
     public TestcaseResultsTableModel(TestcaseLibrary library) {
         this.library = library;
+    }
+
+    public void setPolicyContext(PolicyEvaluator evaluator, PolicyProfile active,
+                                 Function<String, HeaderResult> lookup) {
+        this.policyEvaluator = evaluator;
+        this.activePolicy = active;
+        this.headerResultLookup = lookup;
+        evalCache.clear();
+    }
+
+    public PolicyComplianceStatus getComplianceStatus(TestcaseResult r) {
+        if (policyEvaluator == null || activePolicy == null || headerResultLookup == null)
+            return PolicyComplianceStatus.NOT_EVALUATED;
+        return getEvaluation(r).overallStatus();
+    }
+
+    public PolicyEvaluationResult getEvaluation(TestcaseResult r) {
+        if (policyEvaluator == null || activePolicy == null || headerResultLookup == null)
+            return PolicyEvaluationResult.notEvaluated();
+        return evalCache.computeIfAbsent(r.endpointKey(), key -> {
+            HeaderResult hr = headerResultLookup.apply(key);
+            if (hr == null) return PolicyEvaluationResult.notEvaluated();
+            return policyEvaluator.evaluate(hr, activePolicy);
+        });
+    }
+
+    public void invalidateEvalCache() {
+        evalCache.clear();
     }
 
     public void setData(List<TestcaseResult> data) {
@@ -65,6 +106,7 @@ public class TestcaseResultsTableModel extends AbstractTableModel {
             case 10 -> deriveHeaderStatus(r, 4);
             case 11 -> deriveAcaoChecks(r);
             case 12 -> deriveHeaderStatus(r, 5);
+            case 13 -> getComplianceStatus(r).displayLabel();
             default -> "";
         };
     }

@@ -3,6 +3,8 @@ package com.securityheaders;
 import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
 
+import com.securityheaders.policy.PolicyEvaluator;
+import com.securityheaders.policy.PolicyStore;
 import com.securityheaders.testcase.*;
 
 public class SecurityHeadersExtension implements BurpExtension {
@@ -30,6 +32,9 @@ public class SecurityHeadersExtension implements BurpExtension {
 
         ScanHealthTracker healthTracker = new ScanHealthTracker();
 
+        PolicyStore policyStore = new PolicyStore();
+        PolicyEvaluator policyEvaluator = new PolicyEvaluator();
+
         HeaderCheckHttpHandler handler = new HeaderCheckHttpHandler(resultStore, scopeManager);
         handler.setPassiveEngine(passiveEngine);
         handler.setActiveRunner(activeRunner);
@@ -40,7 +45,8 @@ public class SecurityHeadersExtension implements BurpExtension {
 
         SecurityHeadersTab tab = new SecurityHeadersTab(resultStore, repeaterResultStore,
                 scopeManager, handler, library, tcResultStore, endpointRegistry,
-                baseline, activeRunner, selector, healthTracker);
+                baseline, activeRunner, selector, healthTracker,
+                policyStore, policyEvaluator);
         handler.setOnNewResult(tab::refreshViews);
         handler.setOnTestcaseResult(tab::refreshTestcaseViews);
         handler.setOnRepeaterResult(tab::refreshRepeaterViews);

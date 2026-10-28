@@ -100,6 +100,8 @@ public class HeaderCheckHttpHandler implements HttpHandler {
         String method = extractMethod(request);
         String pathAndQuery = extractPath(responseReceived);
         int statusCode = responseReceived.statusCode();
+        boolean isHttps = false;
+        try { isHttps = request.httpService().secure(); } catch (Exception ignored) {}
 
         List<String> headerNamesLower = responseReceived.headers().stream()
                 .map(h -> h.name().toLowerCase(Locale.ROOT))
@@ -138,7 +140,7 @@ public class HeaderCheckHttpHandler implements HttpHandler {
                     host, port, method, pathAndQuery, statusCode,
                     present[0], present[1], present[2], xfoCoveredByCsp,
                     present[3], present[4], present[5],
-                    rawReq, rawResp, acaoValue, requestOrigin);
+                    rawReq, rawResp, acaoValue, requestOrigin, isHttps);
 
             ResultStore rStore = repeaterResultStore;
             if (rStore != null) {
@@ -158,7 +160,7 @@ public class HeaderCheckHttpHandler implements HttpHandler {
                 host, port, method, pathAndQuery, statusCode,
                 present[0], present[1], present[2], xfoCoveredByCsp,
                 present[3], present[4], present[5],
-                rawReq, rawResp, acaoValue, requestOrigin
+                rawReq, rawResp, acaoValue, requestOrigin, isHttps
         );
 
         resultStore.add(result);
@@ -172,10 +174,6 @@ public class HeaderCheckHttpHandler implements HttpHandler {
         if (passiveEnabled && passiveEngine != null && testcaseResultStore != null) {
             try {
                 String endpointKey = host + ":" + port + ":" + method + ":" + pathAndQuery;
-                boolean isHttps = false;
-                try {
-                    isHttps = request.httpService().secure();
-                } catch (Exception ignored) {}
 
                 Map<String, String> headersLower = new HashMap<>();
                 Map<String, List<String>> headerMultiLower = new HashMap<>();
