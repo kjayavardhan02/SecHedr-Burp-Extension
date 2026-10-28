@@ -1,227 +1,260 @@
-# SecHedr — Burp Suite Security Headers Extension
+# 🛡️ SecHedr — Burp Suite Security Headers Extension
 
-A Burp Suite extension that passively and actively analyzes HTTP security headers across your target application. It identifies missing, misconfigured, or weak security headers in real-time as you browse, with 104 built-in testcases covering OWASP best practices.
+## The Problem
 
----
+Web applications rely on HTTP security headers to defend against common attacks — clickjacking (`X-Frame-Options`), MIME sniffing (`X-Content-Type-Options`), man-in-the-middle (`Strict-Transport-Security`), cross-site scripting (`Content-Security-Policy`), data leaks (`Cache-Control`), and insecure cross-origin access (`Access-Control-Allow-Origin`).
 
-## Features
+In practice, these headers are frequently missing, misconfigured, or inconsistent across endpoints. A login page might have HSTS while the API doesn't. Static assets might cache sensitive data. CORS might reflect any origin. Manually checking every response across an entire application is tedious and error-prone.
 
-### Header Analysis
-- Checks 6 critical security headers on every response:
-  - `Strict-Transport-Security` (HSTS)
-  - `Cache-Control`
-  - `X-Frame-Options` (XFO)
-  - `X-Content-Type-Options` (XCTO)
-  - `Access-Control-Allow-Origin` (ACAO)
-  - `Content-Security-Policy` (CSP)
-- Detects when CSP `frame-ancestors` covers the role of X-Frame-Options
-- Deduplicates requests — each unique endpoint is checked only once
+## The Solution
 
-### ACAO Validation
-- Detects insecure CORS configurations beyond simple presence checks:
-  - Wildcard `*` in Access-Control-Allow-Origin
-  - Reflected Origin (server mirrors the request Origin header)
-  - `null` value in ACAO
-- ACAO Checks column in Raw Results, Repeater, and Testcase Results tabs shows PASS/FAIL
-- ACAO Fail count in Host Summary tab
+**SecHedr** is a Burp Suite extension that **automatically analyzes every HTTP response** flowing through your proxy for six critical security headers. It runs **104 built-in testcases** covering OWASP best practices, and lets you define **custom compliance policies** with content-type-aware rules — so your HTML pages, API responses, and static assets are each validated against the right security requirements.
 
-### Scanning Engines
-| Engine | Description |
-|--------|-------------|
-| **Passive** | Automatically analyzes every proxied response without sending additional traffic |
-| **Active** | Sends modified requests (method variations, origin injection, path mutations, etc.) to test header behavior |
-
-Both engines can be toggled independently from the toolbar.
-
-### 104 Built-in Testcases
-
-| Category | IDs | What it Tests |
-|----------|-----|---------------|
-| Endpoint / Content Type | HDR-001 → 011 | Headers on HTML, JSON, CSS, JS, images, fonts, downloads, auth, health, webhooks, GraphQL |
-| HTTP Status Codes | STATUS-* | Headers across 27 status codes (2xx, 3xx, 4xx, 5xx) |
-| Redirect Chain | REDIRECT-001 | Headers at each hop in a redirect chain |
-| Path / Query Variations | PATH-001 → 006 | Root path, traversal, trailing slash, 404, query params, encoding |
-| HTTP Methods | METHOD-* | Headers for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, TRACE, CONNECT, QUERY |
-| CORS / Origin | ACAO-001 → 008, CORS-001 → 005 | No origin, approved, unapproved, attacker, null, subdomain, scheme, port, credentials, preflight |
-| User-Agent Variations | UA-001 → 006 | Desktop, mobile, bot, cURL, empty, absent user agents |
-| Sec-Fetch | SECFETCH-001 → 004 | Navigate, cors, cross-site iframe, all removed |
-| Referer | REFERER-001 → 005 | Absent, same-origin, cross-origin, suspicious, empty |
-| Forwarded Headers | XFP/XFH/XFF-* | X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-For variations |
-| Authentication / Cookies | COOKIE-001 → 005, AUTH-001 → 003 | No cookie, tampered, expired, unknown, malformed, auth comparison |
-| Header Validation | EDGE-001 → 005 | Duplicate headers, exact syntax, wildcards, error-page conflicts |
-
-Testcases can also be imported from an Excel workbook.
+No manual checking. No spreadsheets. Just browse your target and get a real-time security headers audit.
 
 ---
 
-## Tabs Overview
+## ⚡ Quick Start
 
-| Tab | Purpose |
-|-----|---------|
-| **Dashboard** | Live KPI cards (scan overview, header coverage bars, security posture, scan health), auto-refreshes every 5 seconds |
-| **Raw Results** | Every captured HTTP response with per-header present/missing status and ACAO Checks |
-| **Host Summary** | Aggregated stats per domain — unique endpoints, per-header missing counts, ACAO Fail count |
-| **Endpoint Summary** | Aggregated stats per endpoint — request count, status codes, per-header missing counts, testcase execution counts (Passive TC, Active TC, Not Executed) |
-| **Repeater Requests** | Header analysis for Repeater-only traffic, kept separate from proxy captures |
-| **Testcase Catalog** | Reference list of all 104 testcases with ID, name, description, category, and mode (Passive/Active) |
-| **Testcase Results** | Output from passive and active scanning engines with per-header and ACAO Checks status |
-| **Scope & Export** | Burp-style allowlist/blocklist scope tables + CSV export |
+1. Download `burp-security-headers-4.0.0.jar` from `target/`
+2. Burp Suite → **Extensions** → **Add** → select the JAR
+3. The **SecHedr** tab appears — set your scope and start browsing
 
----
-
-## Installation
-
-### Pre-built JAR
-1. Download `burp-security-headers-4.0.0.jar` from the `target/` folder
-2. Open Burp Suite → **Extensions** → **Installed** → **Add**
-3. Set Extension type to **Java**
-4. Select the downloaded JAR file
-5. The **SecHedr** tab appears in Burp's tab bar
-
-### Build from Source
-**Requirements:** Java 17+, Maven 3.6+
-
+**Build from source** (Java 17+, Maven 3.6+):
 ```bash
 git clone https://github.com/kjayavardhan02/SecHedr-Burp-Extension.git
 cd SecHedr-Burp-Extension
 mvn clean package
 ```
 
-The fat JAR is generated at `target/burp-security-headers-4.0.0.jar`.
+---
+
+## 🔍 Headers Analyzed
+
+Every proxied response is checked for these six headers:
+
+| Header | Why It Matters | What SecHedr Checks |
+|--------|---------------|-------------------|
+| **Strict-Transport-Security** | Forces HTTPS, prevents downgrade attacks | Presence, `max-age` value, `includeSubDomains`, `preload` |
+| **Cache-Control** | Prevents browsers/proxies from storing sensitive data | Required directives (e.g. `no-store`), prohibited directives (e.g. `public`) |
+| **X-Frame-Options** | Prevents clickjacking via iframe embedding | Allowed values (`DENY`, `SAMEORIGIN`), detects CSP `frame-ancestors` coverage |
+| **X-Content-Type-Options** | Prevents MIME type sniffing attacks | `nosniff` value |
+| **Access-Control-Allow-Origin** | Controls cross-origin resource sharing | Wildcard `*`, reflected origin, `null` value, same-origin detection |
+| **Content-Security-Policy** | Restricts resource loading to prevent XSS | Required directives, prohibited sources (`unsafe-inline`, `unsafe-eval`) |
+
+### ACAO Checks — Beyond Presence
+
+Most tools only check if the ACAO header exists. SecHedr goes deeper:
+
+- **Wildcard `*`** — open to all origins (flagged as FAIL)
+- **Origin reflection** — server mirrors back whatever Origin was sent (FAIL)
+- **`null` value** — exploitable by sandboxed iframes (FAIL)
+- **Same-origin reflection** — server reflects the Origin but it matches the Host header (correctly treated as PASS, not a vulnerability)
+
+### XFO + CSP Frame-Ancestors
+
+When `X-Frame-Options` is absent but CSP contains a `frame-ancestors` directive, SecHedr marks XFO as **COVERED** (shown in orange in the compliance detail) rather than failing it — because `frame-ancestors` provides equivalent protection.
 
 ---
 
-## Usage
+## 📋 Policy-Based Compliance
 
-### 1. Set Scope
-Go to **Scope & Export** tab → add target hosts to the **Include in scope** table.
-- Supports wildcards: `*.example.com` matches all subdomains
-- Blocklist takes precedence over allowlist
-- If allowlist is empty, all hosts are in scope
+Real-world security policies aren't one-size-fits-all. An HTML page needs strict CSP and `no-store` caching, while a static image needs long cache lifetimes and doesn't need CSP at all. SecHedr lets you define this.
 
-### 2. Browse
-Browse your target application through Burp's proxy. SecHedr automatically:
-- Captures every unique response in **Raw Results**
-- Runs passive testcases against each response
-- Triggers active testcases for discovered endpoints
-- Builds summaries in **Host Summary** and **Endpoint Summary**
-- Updates the **Dashboard** every 5 seconds with live metrics
+### How It Works
 
-### 3. Review
-- Click any row to view the full **raw request and response headers** in a split pane
-- Use **arrow keys** to navigate between results while the viewer is open
-- Use filters (host, status code, header) to narrow down results — default filter is "None"
-- "Any Missing" filter shows responses with at least one missing header
-- "All Missing" filter shows responses where every header is missing
-- Press **Enter** in any search field to filter by text
+1. Go to the **Policies** tab → create a policy or use the **Default Baseline**
+2. Each header section supports **content-type conditions** — different rules for different response types
+3. **Activate** the policy → all results are evaluated against it in real-time
+4. Policy compliance appears as a column in Raw Results, Testcase Results, and Repeater tabs
+5. Click any row → the detail popup shows per-header compliance with expected vs. actual values
 
-### 4. Export
-From the **Scope & Export** tab:
-- **Filtered Raw Results CSV** — exports currently filtered results
-- **Raw Results CSV** — exports all captured results
-- **Testcase Results CSV** — exports testcase results
+### Content-Type Conditions
+
+Each condition matches responses by their `Content-Type` header and applies its own rules:
+
+| Condition | Content-Type Pattern | Cache-Control Rule | CSP Rule |
+|-----------|---------------------|-------------------|----------|
+| **HTML Pages** | `text/html` | Required: `no-store` | Required: `default-src, script-src`; Prohibited: `unsafe-inline, unsafe-eval` |
+| **API Responses** | `application/json` | Required: `no-store, no-cache` | Not applicable |
+| **Static Assets** | `image/*, text/css, application/javascript` | Required: `public`; Prohibited: `no-store` | Not applicable |
+
+- Content-type patterns support wildcards (`image/*` matches `image/png`, `image/jpeg`, etc.)
+- Responses that don't match any condition get **N/A** — no false failures
+- Conditions are independently configurable for Cache-Control and CSP
+- HSTS, XFO, XCTO, and ACAO rules apply globally (not content-type dependent)
 
 ---
 
-## Dashboard
+## 🧪 104 Built-in Testcases
 
-The dashboard provides a real-time overview with four sections:
+SecHedr ships with 104 testcases organized by category. Each testcase sends a specific request variation and analyzes the response headers.
 
-### Scan Overview
-| Card | Meaning |
-|------|---------|
-| Hosts | Unique domains observed |
-| Endpoints | Unique endpoints assessed |
-| Assessed | Total HTTP responses analyzed |
-| Testcases | Total testcase executions |
-| Missing | Responses with at least one missing header |
-| Errors | Testcases that errored |
+| Category | IDs | What It Tests |
+|----------|-----|---------------|
+| **Content Type** | HDR-001 → 011 | Headers on HTML, JSON, CSS, JS, images, fonts, downloads, auth, health, webhooks, GraphQL |
+| **Status Codes** | STATUS-* | Headers across 27 status codes (2xx, 3xx, 4xx, 5xx) |
+| **Redirect Chain** | REDIRECT-001 | Headers at each hop in a redirect chain |
+| **Path Variations** | PATH-001 → 006 | Root path, traversal, trailing slash, 404, query params, encoding |
+| **HTTP Methods** | METHOD-* | GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, TRACE, CONNECT, QUERY |
+| **CORS / Origin** | ACAO-001 → 008, CORS-001 → 005 | No origin, approved, unapproved, attacker, null, subdomain, scheme, port, credentials, preflight |
+| **User-Agent** | UA-001 → 006 | Desktop, mobile, bot, cURL, empty, absent |
+| **Sec-Fetch** | SECFETCH-001 → 004 | Navigate, cors, cross-site iframe, all removed |
+| **Referer** | REFERER-001 → 005 | Absent, same-origin, cross-origin, suspicious, empty |
+| **Forwarded Headers** | XFP/XFH/XFF-* | X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-For variations |
+| **Auth / Cookies** | COOKIE-001 → 005, AUTH-001 → 003 | No cookie, tampered, expired, unknown, malformed, auth comparison |
+| **Edge Cases** | EDGE-001 → 005 | Duplicate headers, exact syntax, wildcards, error-page conflicts |
 
-### Header Coverage
-Six progress bars showing per-header presence rates across all responses (HSTS, Cache-Control, XFO, XCTO, ACAO, CSP). Click any bar to filter Raw Results by that header.
+### Scanning Modes
 
-### Security Posture
-| Card | Meaning |
-|------|---------|
-| Affected Endpoints | Unique endpoints with at least one missing header (click to filter) |
-| Fully Compliant | Unique endpoints with all headers present (click to filter) |
-| Header Compliance | Overall percentage: passed header checks / total checks |
+| Mode | How It Works |
+|------|-------------|
+| **Passive** | Analyzes every proxied response without sending any extra traffic. Zero noise. |
+| **Active** | Sends modified requests — method variations, origin injection, path mutations — to test how the server behaves under different conditions. |
 
-### Scan Health
-| Card | Meaning |
-|------|---------|
-| Processed | Total requests processed by the handler |
-| Checks/min | Rolling throughput over the last 60 seconds |
-| Heap Used | JVM heap memory usage |
-| Elapsed | Time since scan started |
-| Last Update | Time since last processed request |
-| TC Errors | Total testcase errors |
+Both modes run independently and can be toggled from the toolbar. Passive is always safe; Active generates additional requests.
+
+Testcases can also be imported from an **Excel workbook** for custom test suites.
 
 ---
 
-## UI Controls
+## 📊 Tabs
 
-| Control | Location | Function |
-|---------|----------|----------|
-| **Passive Scan** | Top-right banner | Toggle passive scanning engine on/off |
-| **Active Scan** | Top-right banner | Toggle active scanning engine on/off |
-| **Enabled** | Top-right banner | Master switch — pause/resume all capture |
-| **Clear** | Top-right banner (red) | Wipe all results, summaries, and testcase data (with confirmation dialog) |
+### Dashboard
+Live metrics that auto-refresh every 5 seconds:
 
-> Disabling Passive/Active scan only stops testcases. Basic header presence checks always run while Enabled is on.
+- **Scan Overview** — hosts, endpoints, responses assessed, testcases run, missing headers, errors
+- **Header Coverage** — progress bars showing header presence across raw results and testcase results, plus an ACAO Checks bar
+- **Security Posture** — affected vs. compliant endpoints, overall compliance percentage
+- **Scan Health** — throughput (checks/min), heap usage, elapsed time, last update
+
+### Raw Results
+Every captured HTTP response in a sortable, filterable table. Columns include per-header present/missing status, ACAO Checks (PASS/FAIL), and Policy Compliance. Click any row to open a split pane with full request/response headers and policy compliance detail.
+
+**Filters:** host, status code, per-header missing, text search, "Any Missing", "All Missing".
+
+### Host Summary
+Aggregated per-domain view — unique endpoints, per-header missing counts, ACAO failure count.
+
+### Repeater Requests
+Header analysis for Repeater traffic, kept separate from proxy captures. Same columns and detail popup as Raw Results, with policy compliance.
+
+### Testcase Catalog
+Reference list of all 104 testcases — ID, description, category, mode (Passive/Active).
+
+### Testcase Results
+Output from the scanning engines. Each row shows the testcase ID, host, path, status, per-header status, ACAO Checks, and policy compliance. Click for full detail.
+
+### Policies
+Create, edit, duplicate, and activate compliance policies. The editor provides per-header configuration:
+- **HSTS** — min max-age, require includeSubDomains, require preload
+- **Cache-Control** — content-type conditions with required/prohibited directives
+- **XFO** — allowed values
+- **XCTO** — expected value
+- **ACAO** — allowed origins, wildcard/null toggles
+- **CSP** — content-type conditions with required directives and prohibited sources
+
+### Scope & Export
+- **Scope** — Burp-style include/exclude tables with wildcard support (`*.example.com`)
+- **Export** — CSV export for raw results, filtered results, and testcase results
 
 ---
 
-## Tech Stack
+## 🖱️ UI Controls
 
-- **Java 17** — Burp Montoya API v2025.5
-- **Swing** — Custom dark UI with blue-accent theme
-- **Apache POI** — Excel workbook import for testcases
-- **Maven Shade** — Fat JAR packaging
+| Control | Function |
+|---------|----------|
+| **Passive Scan** | Toggle passive scanning on/off |
+| **Active Scan** | Toggle active scanning on/off |
+| **Enabled** | Master switch — pause/resume all capture |
+| **Clear** | Wipe all results and testcase data (with confirmation) |
+| **Wrap** | Toggle word wrap in request/response viewer |
+
+Click any result row → arrow keys navigate between results while the detail popup is open.
 
 ---
 
-## Project Structure
+## 🏗️ Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Language | Java 17 |
+| Burp API | Montoya API |
+| UI | Swing — custom dark theme with blue accents |
+| Policy Persistence | Gson (JSON, saved to `~/.burp_security_headers_policies.json`) |
+| Testcase Import | Apache POI (Excel) |
+| Packaging | Maven Shade (fat JAR) |
+
+---
+
+## 🏛️ Architecture
 
 ```
-src/main/java/com/securityheaders/
-├── SecurityHeadersExtension.java    # Entry point — registers handler + tab
-├── SecurityHeadersTab.java          # Full Swing UI (tabs, filters, dashboard, popups)
-├── HeaderCheckHttpHandler.java      # HTTP handler — intercepts proxy/repeater traffic
-├── HeaderResult.java                # Data model for a single header check result
-├── ResultStore.java                 # Thread-safe result storage
-├── ResultsTableModel.java           # Table model for Raw Results / Repeater
-├── HostSummary.java                 # Aggregated host-level stats
-├── HostSummaryTableModel.java       # Table model for Host Summary
-├── EndpointSummary.java             # Aggregated endpoint-level stats
-├── EndpointSummaryTableModel.java   # Table model for Endpoint Summary
-├── TestcaseResultsTableModel.java   # Table model for Testcase Results
-├── ScanHealthTracker.java           # Tracks throughput, heap, errors, timing
-├── ScopeManager.java                # Allowlist/blocklist host matching
-├── FilterState.java                 # Filter configuration object
-├── ResultFilterService.java         # Applies filters to result lists
-├── SummaryService.java              # Computes host/endpoint summaries
-├── SummaryStats.java                # Dashboard card stats
-├── CsvExportService.java            # CSV export
-└── testcase/
-    ├── TestcaseLibrary.java         # 104 built-in testcase definitions
-    ├── TestcaseDefinition.java      # Testcase data model
-    ├── PassiveEngine.java           # Passive analysis engine
-    ├── ActiveRunner.java            # Active scanning engine
-    ├── TestcaseResult.java          # Testcase execution result
-    ├── TestcaseResultStore.java     # Deduplicated testcase result storage
-    ├── TestcaseSelector.java        # Testcase enable/disable control
-    ├── BaselineEvaluator.java       # Evaluates against approved baselines
-    ├── ApprovedBaseline.java        # Baseline rule definitions
-    ├── EndpointRegistry.java        # Tracks observed endpoints
-    ├── WorkbookImporter.java        # Excel testcase importer
-    ├── ExecutionMode.java           # PASSIVE / ACTIVE enum
-    ├── ResultStatus.java            # PASS / FAIL / ERROR enum
-    └── SupportStatus.java           # Support status enum
+┌─────────────────────────────────────────────────────────────────────┐
+│                          Burp Suite                                 │
+│                                                                     │
+│  ┌──────────────┐    HTTP Traffic    ┌───────────────────────────┐  │
+│  │   Proxy /     │──────────────────▶│  HeaderCheckHttpHandler   │  │
+│  │   Repeater    │                   │  (Montoya HttpHandler)    │  │
+│  └──────────────┘                    └─────────┬─────────────────┘  │
+│                                                │                    │
+│                                     parse headers, build            │
+│                                                │                    │
+│                                                ▼                    │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                     HeaderResult                             │   │
+│  │  (host, path, status, HSTS, CC, XFO, XCTO, ACAO, CSP)        │   │
+│  └──────────────────────┬───────────────────────────────────────┘   │
+│                         │                                           │
+│            ┌────────────┼──────────────┐                            │
+│            ▼            ▼              ▼                            │
+│  ┌──────────────┐ ┌───────────┐ ┌──────────────────┐                │
+│  │ ResultStore  │ │  Summary  │ │     Policy       │                │ 
+│  │ (raw results)│ │  Service  │ │    Evaluator     │                │
+│  └──────┬───────┘ └─────┬─────┘ └────────┬─────────┘                │
+│         │               │                │                          │
+│         │               │     ┌──────────┴──────────┐               │
+│         │               │     │   PolicyStore       │               │
+│         │               │     │ ┌─────────────────┐ │               │
+│         │               │     │ │ PolicyProfile   │ │               │
+│         │               │     │ │  └─ PolicyRule  │ │               │
+│         │               │     │ │  └─ Conditions  │ │               │
+│         │               │     │ └─────────────────┘ │               │
+│         │               │     │   ~/.burp_sec...json│               │
+│         │               │     └─────────────────────┘               │
+│         │               │                                           │
+│  ┌──────┴───────────────┴───────────────────────────────────────┐   │
+│  │                  SecurityHeadersTab (Swing UI)               │   │
+│  │                                                              │   │
+│  │  ┌───────────┬────────────┬──────────┬───────────────────┐   │   │
+│  │  │ Dashboard │ Raw Results│ Host     │ Repeater          │   │   │
+│  │  │           │            │ Summary  │                   │   │   │
+│  │  ├───────────┼────────────┼──────────┼───────────────────┤   │   │
+│  │  │ Testcase  │ Testcase   │ Policies │ Scope &           │   │   │
+│  │  │ Catalog   │ Results    │          │ Export            │   │   │
+│  │  └───────────┴────────────┴──────────┴───────────────────┘   │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                    Testcase Engine                           │   │
+│  │  ┌───────────────┐  ┌──────────────┐  ┌──────────────────┐   │   │
+│  │  │ PassiveEngine │  │ ActiveRunner │  │ TestcaseLibrary  │   │   │
+│  │  │ (observe)     │  │ (send reqs)  │  │ (104 testcases)  │   │   │
+│  │  └───────────────┘  └──────────────┘  └──────────────────┘   │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌──────────────────┐  ┌──────────────────┐                         │
+│  │ ScopeManager     │  │ CsvExportService │                         │
+│  │ (include/exclude)│  │ (results → CSV)  │                         │
+│  └──────────────────┘  └──────────────────┘                         │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Data Flow
 
-## License
-
-This project is provided as-is for security testing and educational purposes.
+1. **Capture** — `HeaderCheckHttpHandler` intercepts every HTTP response via Montoya API
+2. **Parse** — Extracts the 6 security headers + ACAO behavioral checks into a `HeaderResult`
+3. **Store** — `ResultStore` holds raw results; `TestcaseResultStore` holds testcase results
+4. **Evaluate** — `PolicyEvaluator` checks results against the active `PolicyProfile` (content-type aware)
+5. **Display** — `SecurityHeadersTab` renders everything across 8 tabs with live dashboard updates
+6. **Export** — `CsvExportService` exports filtered results; `ScopeManager` controls what gets captured

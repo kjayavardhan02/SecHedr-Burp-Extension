@@ -169,6 +169,23 @@ public class PolicyStore {
                 o.addProperty("allowWildcard", r.allowWildcard());
                 o.addProperty("allowNull", r.allowNull());
             }
+            case "content-security-policy" -> {
+                if (r.hasCspConditions()) {
+                    JsonArray condArr = new JsonArray();
+                    for (CacheControlCondition c : r.cspConditions()) {
+                        JsonObject co = new JsonObject();
+                        co.addProperty("label", c.label());
+                        co.add("contentTypePatterns", toJsonArray(c.contentTypePatterns()));
+                        co.add("requiredDirectives", toJsonArray(c.requiredDirectives()));
+                        co.add("prohibitedSources", toJsonArray(c.prohibitedDirectives()));
+                        condArr.add(co);
+                    }
+                    o.add("conditions", condArr);
+                } else {
+                    o.add("requiredDirectives", toJsonArray(r.cspRequiredDirectives()));
+                    o.add("prohibitedSources", toJsonArray(r.cspProhibitedSources()));
+                }
+            }
         }
         return o;
     }
@@ -229,6 +246,24 @@ public class PolicyStore {
                     fromJsonArray(o, "allowedOrigins"),
                     o.has("allowWildcard") && o.get("allowWildcard").getAsBoolean(),
                     o.has("allowNull") && o.get("allowNull").getAsBoolean());
+            case "content-security-policy" -> {
+                if (o.has("conditions") && o.get("conditions").isJsonArray()) {
+                    List<CacheControlCondition> conditions = new ArrayList<>();
+                    for (JsonElement el : o.getAsJsonArray("conditions")) {
+                        JsonObject co = el.getAsJsonObject();
+                        conditions.add(new CacheControlCondition(
+                                co.has("label") ? co.get("label").getAsString() : "",
+                                fromJsonArray(co, "contentTypePatterns"),
+                                fromJsonArray(co, "requiredDirectives"),
+                                fromJsonArray(co, "prohibitedSources")));
+                    }
+                    yield PolicyRule.cspWithConditions(enabled, conditions);
+                } else {
+                    yield PolicyRule.csp(enabled,
+                            fromJsonArray(o, "requiredDirectives"),
+                            fromJsonArray(o, "prohibitedSources"));
+                }
+            }
             default -> null;
         };
     }

@@ -687,14 +687,6 @@ public class SecurityHeadersTab extends JPanel {
         int missingTotal = 0;
         int hstsP = 0, ccP = 0, xfoP = 0, xctoP = 0, acaoP = 0, acaoChkP = 0, acaoWithHeader = 0, cspP = 0;
 
-        PolicyProfile activePolicy = policyStore.getActive();
-        String[] policyHeaders = {
-            "strict-transport-security", "cache-control", "x-frame-options",
-            "x-content-type-options", "access-control-allow-origin", null, "content-security-policy"
-        };
-        int[] policyCov = new int[7];
-        int[] policyTotal = new int[7];
-
         for (HeaderResult r : all) {
             hosts.add(r.host());
             endpoints.add(r.endpointKey());
@@ -709,17 +701,6 @@ public class SecurityHeadersTab extends JPanel {
                 if (!r.acaoCheckFailed()) acaoChkP++;
             }
             if (r.cspPresent()) cspP++;
-
-            if (activePolicy != null) {
-                PolicyEvaluationResult eval = policyEvaluator.evaluate(r, activePolicy);
-                for (PolicyRuleResult rr : eval.ruleResults()) {
-                    int idx = headerPolicyIndex(rr.headerName());
-                    if (idx < 0) continue;
-                    if (rr.status() == PolicyComplianceStatus.NA) continue;
-                    policyTotal[idx]++;
-                    if (rr.status() == PolicyComplianceStatus.PASS) policyCov[idx]++;
-                }
-            }
         }
 
         List<TestcaseResult> tcAll = tcResultStore.getAll();
@@ -736,15 +717,8 @@ public class SecurityHeadersTab extends JPanel {
         int[] present = {hstsP, ccP, xfoP, xctoP, acaoP, acaoChkP, cspP};
         int[] presentTotal = {total, total, total, total, total, acaoWithHeader, total};
         for (int i = 0; i < 7; i++) {
-            if (policyHeaders[i] != null && activePolicy != null
-                    && activePolicy.rules().containsKey(policyHeaders[i])
-                    && activePolicy.rules().get(policyHeaders[i]).enabled()) {
-                dashCovPresent[i] = policyCov[i];
-                dashCovTotal[i] = policyTotal[i];
-            } else {
-                dashCovPresent[i] = present[i];
-                dashCovTotal[i] = presentTotal[i];
-            }
+            dashCovPresent[i] = present[i];
+            dashCovTotal[i] = presentTotal[i];
             int covTotal = dashCovTotal[i];
             int covPresent = dashCovPresent[i];
             int pct = covTotal > 0 ? covPresent * 100 / covTotal : 0;
@@ -823,19 +797,8 @@ public class SecurityHeadersTab extends JPanel {
         }
 
         // Security Posture
-        int totalChecks;
-        int passedChecks;
-        if (activePolicy != null) {
-            totalChecks = 0;
-            passedChecks = 0;
-            for (int i = 0; i < 7; i++) {
-                totalChecks += policyTotal[i];
-                passedChecks += policyCov[i];
-            }
-        } else {
-            totalChecks = total * 5 + acaoWithHeader + total;
-            passedChecks = hstsP + ccP + xfoP + xctoP + acaoP + acaoChkP + cspP;
-        }
+        int totalChecks = total * 5 + acaoWithHeader + total;
+        int passedChecks = hstsP + ccP + xfoP + xctoP + acaoP + acaoChkP + cspP;
         int affected = 0;
         int compliant = 0;
         for (HeaderResult r : all) {
@@ -2151,77 +2114,11 @@ public class SecurityHeadersTab extends JPanel {
         List<JTextField[]> ccConditionFields = new ArrayList<>();
 
         Runnable addCcConditionRow = () -> {
-            JPanel row = new JPanel();
-            row.setLayout(new BoxLayout(row, BoxLayout.Y_AXIS));
-            row.setBackground(BG_ELEV);
-            row.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
-                    new EmptyBorder(6, 8, 6, 8)));
-
-            JTextField labelF = darkField(10);
-            labelF.setToolTipText("Label (e.g. Static, HTML, API)");
-            JTextField ctF = darkField(18);
-            ctF.setToolTipText("Content-Type patterns, comma-separated (e.g. image/*,text/css). Leave empty for default/fallback.");
-            JTextField reqF = darkField(18);
-            reqF.setToolTipText("Comma-separated required directives (e.g. no-store,no-cache)");
-            JTextField prohF = darkField(18);
-            prohF.setToolTipText("Comma-separated prohibited directives (e.g. public)");
-
-            JButton removeBtn = new JButton("Remove");
-            removeBtn.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            removeBtn.setForeground(RED_FG);
-            removeBtn.setBackground(BG);
-            removeBtn.setBorderPainted(false);
-            removeBtn.setFocusPainted(false);
-            removeBtn.setContentAreaFilled(false);
-            removeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-
-            JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-            topRow.setOpaque(false);
-            topRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
-            JLabel lbl1 = new JLabel("Label:"); lbl1.setForeground(TXT2); lbl1.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            JLabel lbl2 = new JLabel("Content-Type:"); lbl2.setForeground(TXT2); lbl2.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            topRow.add(lbl1); topRow.add(labelF);
-            topRow.add(Box.createHorizontalStrut(6));
-            topRow.add(lbl2); topRow.add(ctF);
-            topRow.add(Box.createHorizontalStrut(6));
-            topRow.add(removeBtn);
-
-            JPanel bottomRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-            bottomRow.setOpaque(false);
-            bottomRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
-            JLabel lbl3 = new JLabel("Required:"); lbl3.setForeground(TXT2); lbl3.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            JLabel lbl4 = new JLabel("Prohibited:"); lbl4.setForeground(TXT2); lbl4.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            bottomRow.add(lbl3); bottomRow.add(reqF);
-            bottomRow.add(Box.createHorizontalStrut(6));
-            bottomRow.add(lbl4); bottomRow.add(prohF);
-
-            row.add(topRow);
-            row.add(Box.createVerticalStrut(2));
-            row.add(bottomRow);
-
-            JTextField[] fields = {labelF, ctF, reqF, prohF};
-            ccConditionRows.add(row);
-            ccConditionFields.add(fields);
-            ccConditionsPanel.add(row);
-            ccConditionsPanel.add(Box.createVerticalStrut(4));
-            ccConditionsPanel.revalidate();
-            ccConditionsPanel.repaint();
-
-            removeBtn.addActionListener(ev2 -> {
-                int idx = ccConditionRows.indexOf(row);
-                if (idx >= 0) {
-                    ccConditionRows.remove(idx);
-                    ccConditionFields.remove(idx);
-                    ccConditionsPanel.remove(row);
-                    ccConditionsPanel.revalidate();
-                    ccConditionsPanel.repaint();
-                }
-            });
+            addConditionRow(ccConditionsPanel, ccConditionRows, ccConditionFields,
+                    "Required Directives:", "Prohibited Directives:");
         };
-
-        JButton addConditionBtn = styledButton("+ Add Condition");
-        addConditionBtn.addActionListener(ev -> addCcConditionRow.run());
+        JButton ccAddBtn = styledButton("+ Add Condition");
+        ccAddBtn.addActionListener(ev -> addCcConditionRow.run());
 
         JCheckBox xfoEnabled = darkCheckBox("X-Frame-Options");
         JTextField xfoAllowed = darkField(20);
@@ -2236,6 +2133,20 @@ public class SecurityHeadersTab extends JPanel {
         acaoOrigins.setToolTipText("Comma-separated allowed origins (e.g. https://example.com)");
         JCheckBox acaoWildcard = darkCheckBox("Allow wildcard (*)");
         JCheckBox acaoNull = darkCheckBox("Allow null");
+
+        JCheckBox cspEnabled = darkCheckBox("Content-Security-Policy");
+        JPanel cspConditionsPanel = new JPanel();
+        cspConditionsPanel.setLayout(new BoxLayout(cspConditionsPanel, BoxLayout.Y_AXIS));
+        cspConditionsPanel.setBackground(BG);
+        List<JPanel> cspConditionRows = new ArrayList<>();
+        List<JTextField[]> cspConditionFields = new ArrayList<>();
+
+        Runnable addCspConditionRow = () -> {
+            addConditionRow(cspConditionsPanel, cspConditionRows, cspConditionFields,
+                    "Required Directives:", "Prohibited Sources:");
+        };
+        JButton cspAddBtn = styledButton("+ Add Condition");
+        cspAddBtn.addActionListener(ev -> addCspConditionRow.run());
 
         JButton saveBtn = styledButton("Save Policy");
         JLabel editorStatus = new JLabel(" ");
@@ -2254,14 +2165,8 @@ public class SecurityHeadersTab extends JPanel {
         formPanel.add(Box.createVerticalStrut(8));
         formPanel.add(sectionLabel("Cache-Control"));
         formPanel.add(checkRow(ccEnabled));
-        formPanel.add(Box.createVerticalStrut(4));
         formPanel.add(ccConditionsPanel);
-        formPanel.add(Box.createVerticalStrut(6));
-        JPanel addCondBtnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        addCondBtnRow.setBackground(BG);
-        addCondBtnRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
-        addCondBtnRow.add(addConditionBtn);
-        formPanel.add(addCondBtnRow);
+        formPanel.add(addBtnRow(ccAddBtn));
         formPanel.add(Box.createVerticalStrut(8));
         formPanel.add(sectionLabel("X-Frame-Options"));
         formPanel.add(checkRow(xfoEnabled));
@@ -2276,6 +2181,11 @@ public class SecurityHeadersTab extends JPanel {
         formPanel.add(formRow("  Origins:", acaoOrigins));
         formPanel.add(checkRow(acaoWildcard));
         formPanel.add(checkRow(acaoNull));
+        formPanel.add(Box.createVerticalStrut(8));
+        formPanel.add(sectionLabel("Content-Security-Policy"));
+        formPanel.add(checkRow(cspEnabled));
+        formPanel.add(cspConditionsPanel);
+        formPanel.add(addBtnRow(cspAddBtn));
         formPanel.add(Box.createVerticalStrut(12));
 
         JPanel saveBtnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
@@ -2379,6 +2289,35 @@ public class SecurityHeadersTab extends JPanel {
                 acaoWildcard.setSelected(false);
                 acaoNull.setSelected(false);
             }
+
+            PolicyRule csp = p.getRule("content-security-policy");
+            cspConditionRows.clear();
+            cspConditionFields.clear();
+            cspConditionsPanel.removeAll();
+            if (csp != null) {
+                cspEnabled.setSelected(csp.enabled());
+                if (csp.hasCspConditions()) {
+                    for (CacheControlCondition c : csp.cspConditions()) {
+                        addCspConditionRow.run();
+                        JTextField[] f = cspConditionFields.get(cspConditionFields.size() - 1);
+                        f[0].setText(c.label());
+                        f[1].setText(String.join(",", c.contentTypePatterns()));
+                        f[2].setText(String.join(",", c.requiredDirectives()));
+                        f[3].setText(String.join(",", c.prohibitedDirectives()));
+                    }
+                } else if (!csp.cspRequiredDirectives().isEmpty() || !csp.cspProhibitedSources().isEmpty()) {
+                    addCspConditionRow.run();
+                    JTextField[] f = cspConditionFields.get(0);
+                    f[0].setText("default");
+                    f[1].setText("");
+                    f[2].setText(String.join(",", csp.cspRequiredDirectives()));
+                    f[3].setText(String.join(",", csp.cspProhibitedSources()));
+                }
+            } else {
+                cspEnabled.setSelected(false);
+            }
+            cspConditionsPanel.revalidate();
+            cspConditionsPanel.repaint();
             editorStatus.setText(" ");
         };
 
@@ -2408,15 +2347,15 @@ public class SecurityHeadersTab extends JPanel {
             p.putRule(PolicyRule.hsts(hstsEnabled.isSelected(), minAge,
                     hstsSubdomains.isSelected(), hstsPreload.isSelected()));
             if (!ccConditionFields.isEmpty()) {
-                List<CacheControlCondition> conditions = new ArrayList<>();
+                List<CacheControlCondition> ccConditions = new ArrayList<>();
                 for (JTextField[] f : ccConditionFields) {
-                    conditions.add(new CacheControlCondition(
+                    ccConditions.add(new CacheControlCondition(
                             f[0].getText().trim(),
                             splitCsv(f[1].getText()),
                             splitCsv(f[2].getText()),
                             splitCsv(f[3].getText())));
                 }
-                p.putRule(PolicyRule.cacheControl(ccEnabled.isSelected(), conditions));
+                p.putRule(PolicyRule.cacheControl(ccEnabled.isSelected(), ccConditions));
             } else {
                 p.putRule(PolicyRule.cacheControl(ccEnabled.isSelected(), List.of(), List.of()));
             }
@@ -2426,6 +2365,19 @@ public class SecurityHeadersTab extends JPanel {
                     xctoExpected.getText().trim()));
             p.putRule(PolicyRule.acao(acaoEnabled.isSelected(),
                     splitCsv(acaoOrigins.getText()), acaoWildcard.isSelected(), acaoNull.isSelected()));
+            if (!cspConditionFields.isEmpty()) {
+                List<CacheControlCondition> cspConditions = new ArrayList<>();
+                for (JTextField[] f : cspConditionFields) {
+                    cspConditions.add(new CacheControlCondition(
+                            f[0].getText().trim(),
+                            splitCsv(f[1].getText()),
+                            splitCsv(f[2].getText()),
+                            splitCsv(f[3].getText())));
+                }
+                p.putRule(PolicyRule.cspWithConditions(cspEnabled.isSelected(), cspConditions));
+            } else {
+                p.putRule(PolicyRule.csp(cspEnabled.isSelected(), List.of(), List.of()));
+            }
 
             List<String> errors = p.validate();
             if (!errors.isEmpty()) {
@@ -2446,10 +2398,15 @@ public class SecurityHeadersTab extends JPanel {
             if (name == null || name.isBlank()) return;
             PolicyProfile p = new PolicyProfile(name.trim(), "");
             p.putRule(PolicyRule.hsts(true, 31536000, true, false));
-            p.putRule(PolicyRule.cacheControl(true, List.of("no-store"), List.of()));
+            p.putRule(PolicyRule.cacheControl(true, List.of(
+                    new CacheControlCondition("default", List.of(), List.of("no-store"), List.of()))));
             p.putRule(PolicyRule.xFrameOptions(true, List.of("DENY", "SAMEORIGIN")));
             p.putRule(PolicyRule.xContentTypeOptions(true, "nosniff"));
             p.putRule(PolicyRule.acao(true, List.of(), false, false));
+            p.putRule(PolicyRule.cspWithConditions(true, List.of(
+                    new CacheControlCondition("default", List.of(),
+                            List.of("default-src", "script-src"),
+                            List.of("unsafe-inline", "unsafe-eval")))));
             policyStore.add(p);
             refreshProfiles.run();
             profileTable.setRowSelectionInterval(profileModel.getRowCount() - 1, profileModel.getRowCount() - 1);
@@ -2533,6 +2490,93 @@ public class SecurityHeadersTab extends JPanel {
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .collect(java.util.stream.Collectors.toList());
+    }
+
+    private void addConditionRow(JPanel conditionsPanel, List<JPanel> rows,
+                                  List<JTextField[]> fields,
+                                  String reqLabel, String prohLabel) {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.Y_AXIS));
+        row.setBackground(BG_ELEV);
+        row.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
+                new EmptyBorder(8, 10, 8, 10)));
+
+        JTextField labelF = darkField(20);
+        JTextField ctF = darkField(20);
+        ctF.setToolTipText("Content-Type patterns, comma-separated (e.g. text/html, application/json). Leave empty for all.");
+        JTextField reqF = darkField(20);
+        JTextField prohF = darkField(20);
+
+        JButton removeBtn = pill("Remove", RED_FG, new Color(230, 110, 115));
+        removeBtn.setFont(new Font("SansSerif", Font.BOLD, 11));
+        removeBtn.setBorder(new EmptyBorder(2, 14, 2, 14));
+        removeBtn.setMargin(new Insets(0, 0, 0, 6));
+
+        // Label row with Remove button on the far right
+        JPanel labelRow = new JPanel(new BorderLayout(6, 0));
+        labelRow.setOpaque(false);
+        labelRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        JPanel labelLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        labelLeft.setOpaque(false);
+        JLabel labelLbl = new JLabel("Label:");
+        labelLbl.setForeground(TXT2);
+        labelLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        labelLbl.setPreferredSize(new Dimension(COND_LABEL_WIDTH, 20));
+        labelLeft.add(labelLbl);
+        labelLeft.add(labelF);
+        JPanel removeWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
+        removeWrap.setOpaque(false);
+        removeWrap.add(removeBtn);
+        labelRow.add(labelLeft, BorderLayout.CENTER);
+        labelRow.add(removeWrap, BorderLayout.EAST);
+
+        row.add(labelRow);
+        row.add(condFormRow("Content-Type:", ctF));
+        row.add(condFormRow(reqLabel, reqF));
+        row.add(condFormRow(prohLabel, prohF));
+
+        JTextField[] fieldArr = {labelF, ctF, reqF, prohF};
+        rows.add(row);
+        fields.add(fieldArr);
+        conditionsPanel.add(row);
+        conditionsPanel.add(Box.createVerticalStrut(4));
+        conditionsPanel.revalidate();
+        conditionsPanel.repaint();
+
+        removeBtn.addActionListener(ev -> {
+            int idx = rows.indexOf(row);
+            if (idx >= 0) {
+                rows.remove(idx);
+                fields.remove(idx);
+                conditionsPanel.remove(row);
+                conditionsPanel.revalidate();
+                conditionsPanel.repaint();
+            }
+        });
+    }
+
+    private static final int COND_LABEL_WIDTH = 140;
+
+    private JPanel condFormRow(String labelText, JComponent field) {
+        JPanel r = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        r.setOpaque(false);
+        r.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        JLabel l = new JLabel(labelText);
+        l.setForeground(TXT2);
+        l.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        l.setPreferredSize(new Dimension(COND_LABEL_WIDTH, 20));
+        r.add(l);
+        r.add(field);
+        return r;
+    }
+
+    private JPanel addBtnRow(JButton btn) {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        row.setBackground(BG);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        row.add(btn);
+        return row;
     }
 
     private JPanel formRow(String labelText, JComponent field) {
@@ -3221,6 +3265,7 @@ public class SecurityHeadersTab extends JPanel {
         sb.append(".val{color:#c8ccd4;font-size:9px;font-family:monospace;}");
         sb.append(".pass{color:#4caf6e;font-weight:bold;font-size:9px;}");
         sb.append(".fail{color:#d25f64;font-weight:bold;font-size:9px;}");
+        sb.append(".covered{color:#e8a040;font-weight:bold;font-size:9px;}");
         sb.append(".na{color:#828898;font-size:9px;}");
         sb.append("</style></head><body>");
 
@@ -3230,12 +3275,14 @@ public class SecurityHeadersTab extends JPanel {
           .append(overallLabel).append("</span></div>");
 
         for (PolicyRuleResult rule : eval.ruleResults()) {
-            String statusClass = switch (rule.status()) {
+            boolean isCovered = rule.status() == PolicyComplianceStatus.PASS
+                    && rule.reason() != null && rule.reason().startsWith("Covered by");
+            String statusClass = isCovered ? "covered" : switch (rule.status()) {
                 case PASS -> "pass";
                 case FAIL -> "fail";
                 default -> "na";
             };
-            String statusText = switch (rule.status()) {
+            String statusText = isCovered ? "&#9632; COVERED" : switch (rule.status()) {
                 case PASS -> "&#10003; PASS";
                 case FAIL -> "&#10007; FAIL";
                 case NA -> "N/A";
@@ -3274,6 +3321,7 @@ public class SecurityHeadersTab extends JPanel {
             case "X-Frame-Options" -> 2;
             case "X-Content-Type-Options" -> 3;
             case "Access-Control-Allow-Origin" -> 4;
+            case "Content-Security-Policy" -> 6;
             default -> -1;
         };
     }

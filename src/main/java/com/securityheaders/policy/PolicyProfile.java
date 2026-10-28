@@ -81,10 +81,22 @@ public final class PolicyProfile {
         PolicyProfile p = new PolicyProfile("Default Baseline",
                 "Baseline policy checking common security header best practices");
         p.putRule(PolicyRule.hsts(true, 31536000, true, false));
-        p.putRule(PolicyRule.cacheControl(true, List.of("no-store"), List.of()));
+        p.putRule(PolicyRule.cacheControl(true, List.of(
+                new CacheControlCondition("HTML/API", List.of("text/html", "application/json"),
+                        List.of("no-store"), List.of()),
+                new CacheControlCondition("Static Assets", List.of("image/*", "text/css", "application/javascript"),
+                        List.of("public"), List.of("no-store"))
+        )));
         p.putRule(PolicyRule.xFrameOptions(true, List.of("DENY", "SAMEORIGIN")));
         p.putRule(PolicyRule.xContentTypeOptions(true, "nosniff"));
         p.putRule(PolicyRule.acao(true, List.of(), false, false));
+        p.putRule(PolicyRule.cspWithConditions(true, List.of(
+                new CacheControlCondition("HTML Pages", List.of("text/html"),
+                        List.of("default-src", "script-src"),
+                        List.of("unsafe-inline", "unsafe-eval")),
+                new CacheControlCondition("API", List.of("application/json"),
+                        List.of(), List.of())
+        )));
         return p;
     }
 }

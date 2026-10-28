@@ -32,6 +32,13 @@ public final class PolicyRule {
     private boolean allowWildcard;
     private boolean allowNull;
 
+    // CSP
+    private final List<String> cspRequiredDirectives = new ArrayList<>();
+    private final List<String> cspProhibitedSources = new ArrayList<>();
+
+    // CSP content-type conditions
+    private final List<CacheControlCondition> cspConditions = new ArrayList<>();
+
     private PolicyRule(String headerName, boolean enabled, Mode mode) {
         this.headerName = headerName;
         this.enabled = enabled;
@@ -81,6 +88,20 @@ public final class PolicyRule {
         return r;
     }
 
+    public static PolicyRule csp(boolean enabled, List<String> requiredDirectives,
+                                 List<String> prohibitedSources) {
+        PolicyRule r = new PolicyRule("content-security-policy", enabled, Mode.DIRECTIVES);
+        if (requiredDirectives != null) r.cspRequiredDirectives.addAll(requiredDirectives);
+        if (prohibitedSources != null) r.cspProhibitedSources.addAll(prohibitedSources);
+        return r;
+    }
+
+    public static PolicyRule cspWithConditions(boolean enabled, List<CacheControlCondition> conditions) {
+        PolicyRule r = new PolicyRule("content-security-policy", enabled, Mode.DIRECTIVES);
+        if (conditions != null) r.cspConditions.addAll(conditions);
+        return r;
+    }
+
     public String headerName() { return headerName; }
     public boolean enabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -113,6 +134,22 @@ public final class PolicyRule {
     public boolean allowWildcard() { return allowWildcard; }
     public boolean allowNull() { return allowNull; }
 
+    public List<String> cspRequiredDirectives() { return cspRequiredDirectives; }
+    public List<String> cspProhibitedSources() { return cspProhibitedSources; }
+
+    public List<CacheControlCondition> cspConditions() { return cspConditions; }
+
+    public boolean hasCspConditions() {
+        return !cspConditions.isEmpty();
+    }
+
+    public CacheControlCondition findMatchingCspCondition(String contentType) {
+        for (CacheControlCondition c : cspConditions) {
+            if (c.matchesContentType(contentType)) return c;
+        }
+        return null;
+    }
+
     public PolicyRule copy() {
         return switch (headerName) {
             case "strict-transport-security" -> hsts(enabled, minMaxAge, requireIncludeSubDomains, requirePreload);
@@ -128,6 +165,15 @@ public final class PolicyRule {
             case "x-frame-options" -> xFrameOptions(enabled, allowedValues);
             case "x-content-type-options" -> xContentTypeOptions(enabled, expectedValue);
             case "access-control-allow-origin" -> acao(enabled, allowedOrigins, allowWildcard, allowNull);
+            case "content-security-policy" -> {
+                if (hasCspConditions()) {
+                    List<CacheControlCondition> copied = new ArrayList<>();
+                    for (CacheControlCondition c : cspConditions) copied.add(c.copy());
+                    yield cspWithConditions(enabled, copied);
+                } else {
+                    yield csp(enabled, cspRequiredDirectives, cspProhibitedSources);
+                }
+            }
             default -> new PolicyRule(headerName, enabled, mode);
         };
     }
@@ -161,6 +207,19 @@ public final class PolicyRule {
                     errors.add("ACAO: at least one allowed origin, wildcard, or null must be configured");
                 for (String o : allowedOrigins) {
                     if (o == null || o.isBlank()) errors.add("ACAO: empty origin in allowlist");
+                }
+            }
+            case "content-security-policy" -> {
+                if (hasCspConditions()) {
+                    for (CacheControlCondition c : cspConditions) {
+                        List<String> cErrs = c.validate();
+                        for (String e : cErrs) {
+                            errors.add(e.replace("Cache-Control", "CSP"));
+                        }
+                    }
+                } else {
+                    if (cspRequiredDirectives.isEmpty() && cspProhibitedSources.isEmpty())
+                        errors.add("CSP: at least one required directive or prohibited source needed");
                 }
             }
         }

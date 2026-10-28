@@ -53,6 +53,7 @@ public class PolicyEvaluator {
             case "x-frame-options" -> evaluateXfo(rule, response);
             case "x-content-type-options" -> evaluateXcto(rule, response);
             case "access-control-allow-origin" -> evaluateAcao(rule, response);
+            case "content-security-policy" -> evaluateCsp(rule, response);
             default -> null;
         };
     }
@@ -339,6 +340,101 @@ public class PolicyEvaluator {
         if (rule.allowWildcard()) parts.add("*");
         if (rule.allowNull()) parts.add("null");
         return parts.isEmpty() ? "(none configured)" : String.join(", ", parts);
+    }
+
+    // ── CSP ──
+
+    private PolicyRuleResult evaluateCsp(PolicyRule rule, HeaderResult response) {
+        String rawResp = response.rawResponse();
+        String contentType = extractHeaderValue(rawResp, "content-type");
+        String val = extractHeaderValue(rawResp, "content-security-policy");
+
+        if (rule.hasCspConditions()) {
+            CacheControlCondition condition = rule.findMatchingCspCondition(contentType);
+            if (condition == null) {
+                return new PolicyRuleResult("Content-Security-Policy", PolicyComplianceStatus.NA,
+                        "No matching condition for content-type",
+                        contentType != null ? contentType : "(unknown)", null);
+            }
+            if (val == null && !response.cspPresent()) {
+                return new PolicyRuleResult("Content-Security-Policy", PolicyComplianceStatus.FAIL,
+                        "Header is absent", "(absent)",
+                        "[" + condition.label() + "] Required: "
+                                + String.join(", ", condition.requiredDirectives()));
+            }
+            if (val == null) {
+                return new PolicyRuleResult("Content-Security-Policy", PolicyComplianceStatus.PASS,
+                        "Header present (value not available for detailed check)", null, null);
+            }
+            return evaluateCspFlat(condition.requiredDirectives(),
+                    condition.prohibitedDirectives(), val, condition.label());
+        }
+
+        if (val == null && !response.cspPresent()) {
+            return new PolicyRuleResult("Content-Security-Policy", PolicyComplianceStatus.FAIL,
+                    "Header is absent", "(absent)",
+                    "Required directives: " + String.join(", ", rule.cspRequiredDirectives()));
+        }
+        if (val == null) {
+            return new PolicyRuleResult("Content-Security-Policy", PolicyComplianceStatus.PASS,
+                    "Header present (value not available for detailed check)", null, null);
+        }
+        return evaluateCspFlat(rule.cspRequiredDirectives(), rule.cspProhibitedSources(), val, null);
+    }
+
+    private PolicyRuleResult evaluateCspFlat(List<String> required, List<String> prohibited,
+                                              String value, String conditionLabel) {
+        Map<String, List<String>> directives = parseCspDirectives(value);
+        List<String> failures = new ArrayList<>();
+
+        for (String req : required) {
+            if (!directives.containsKey(req.toLowerCase(Locale.ROOT).trim())) {
+                failures.add("required directive missing: " + req);
+            }
+        }
+
+        for (String p : prohibited) {
+            String pLower = p.toLowerCase(Locale.ROOT).trim();
+            for (Map.Entry<String, List<String>> entry : directives.entrySet()) {
+                for (String source : entry.getValue()) {
+                    if (source.equalsIgnoreCase(pLower)
+                            || source.equalsIgnoreCase("'" + pLower + "'")) {
+                        failures.add("prohibited source '" + p + "' found in " + entry.getKey());
+                        break;
+                    }
+                }
+            }
+        }
+
+        String expected = (conditionLabel != null ? "[" + conditionLabel + "] " : "")
+                + "Required: " + String.join(", ", required);
+        if (!prohibited.isEmpty()) {
+            expected += "; Prohibited: " + String.join(", ", prohibited);
+        }
+
+        if (failures.isEmpty()) {
+            return new PolicyRuleResult("Content-Security-Policy", PolicyComplianceStatus.PASS,
+                    "Compliant", value, expected);
+        }
+        return new PolicyRuleResult("Content-Security-Policy", PolicyComplianceStatus.FAIL,
+                String.join("; ", failures), value, expected);
+    }
+
+    Map<String, List<String>> parseCspDirectives(String headerValue) {
+        Map<String, List<String>> directives = new LinkedHashMap<>();
+        if (headerValue == null) return directives;
+        for (String part : headerValue.split(";")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) continue;
+            String[] tokens = trimmed.split("\\s+");
+            String directiveName = tokens[0].toLowerCase(Locale.ROOT);
+            List<String> sources = new ArrayList<>();
+            for (int i = 1; i < tokens.length; i++) {
+                sources.add(tokens[i]);
+            }
+            directives.put(directiveName, sources);
+        }
+        return directives;
     }
 
     // ── Header parsing utilities ──
